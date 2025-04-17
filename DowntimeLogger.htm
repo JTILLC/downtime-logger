@@ -103,11 +103,11 @@
 
     const initialData = lines.reduce((acc, line) => {
       acc[line.name] = {
-        '2025-01-11': [...defaultHeadData],
-        '2025-01-15': [...defaultHeadData],
-        '2025-01-17': [...defaultHeadData],
-        '2025-02-05': [...defaultHeadData],
-        '2025-02-07': [...defaultHeadData],
+        '2025-01-11': { heads: [...defaultHeadData], notes: '' },
+        '2025-01-15': { heads: [...defaultHeadData], notes: '' },
+        '2025-01-17': { heads: [...defaultHeadData], notes: '' },
+        '2025-02-05': { heads: [...defaultHeadData], notes: '' },
+        '2025-02-07': { heads: [...defaultHeadData], notes: '' },
         running: {
           '2025-01-11': 'No',
           '2025-01-15': 'No',
@@ -219,8 +219,8 @@
         setData(prev => {
           const newData = { ...prev };
           const lineData = { ...newData[currentLine] };
-          const dayData = [...(lineData[currentDay] || defaultHeadData)];
-          const headData = { ...dayData[headIndex] };
+          const dayData = { ...lineData[currentDay], heads: [...(lineData[currentDay]?.heads || defaultHeadData)] };
+          const headData = { ...dayData.heads[headIndex] };
 
           headData[field] = value;
 
@@ -232,7 +232,7 @@
             headData.repaired = value === 'None' ? 'N/A' : headData.repaired;
           }
 
-          dayData[headIndex] = headData;
+          dayData.heads[headIndex] = headData;
           lineData[currentDay] = dayData;
           newData[currentLine] = lineData;
           return newData;
@@ -244,6 +244,18 @@
           const newData = { ...prev };
           const lineData = { ...newData[currentLine] };
           lineData.running = { ...lineData.running, [currentDay]: value };
+          newData[currentLine] = lineData;
+          return newData;
+        });
+      };
+
+      const handleNotesChange = (value) => {
+        setData(prev => {
+          const newData = { ...prev };
+          const lineData = { ...newData[currentLine] };
+          const dayData = { ...lineData[currentDay], heads: [...(lineData[currentDay]?.heads || defaultHeadData)] };
+          dayData.notes = value;
+          lineData[currentDay] = dayData;
           newData[currentLine] = lineData;
           return newData;
         });
@@ -272,9 +284,10 @@
               Line: line.name,
               Section: line.section,
               Date: day.date,
-              Running: data[line.name].running[day.date] || 'No'
+              Running: data[line.name].running[day.date] || 'No',
+              Notes: data[line.name][day.date]?.notes || ''
             };
-            (data[line.name][day.date] || defaultHeadData).forEach(head => {
+            (data[line.name][day.date]?.heads || defaultHeadData).forEach(head => {
               row[`Head${head.head}_Offline`] = head.offline;
               row[`Head${head.head}_Issue`] = head.issue;
               row[`Head${head.head}_Repaired`] = head.repaired;
@@ -294,20 +307,20 @@
       const totalHeadsDownPerDay = dates.map(day => ({
         day: day.label,
         date: day.date,
-        heads: (data[currentLine][day.date] || defaultHeadData).filter(head => head.offline === 'Offline').length
+        heads: (data[currentLine][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length
       }));
 
       const issueCounts = issueTypes
         .map(issue => ({
           issue,
           count: Object.values(data)
-            .flatMap(line => Object.values(line).filter(v => Array.isArray(v)).flat())
+            .flatMap(line => Object.values(line).filter(v => v.heads).flatMap(v => v.heads))
             .filter(head => head.issue === issue).length
         }))
         .filter(item => item.count > 0);
 
       const totalHeadsDown = Object.values(data)
-        .flatMap(line => Object.values(line).filter(v => Array.isArray(v)).flat())
+        .flatMap(line => Object.values(line).filter(v => v.heads).flatMap(v => v.heads))
         .filter(head => head.offline === 'Offline').length;
 
       const totalLinesRunning = lines.reduce((count, line) =>
@@ -315,12 +328,12 @@
           dayCount + (data[line.name].running[day.date] === 'Yes' ? 1 : 0), 0), 0);
 
       const activeLines = lines.filter(line =>
-        Object.values(data[line.name]).some(day => Array.isArray(day) && day.some(head => head.offline === 'Offline'))
+        Object.values(data[line.name]).some(day => day.heads && day.heads.some(head => head.offline === 'Offline'))
       ).map(line => line.name);
 
       const headsDownSummary = lines.flatMap(line =>
         dates.map(day => {
-          const headsOffline = (data[line.name][day.date] || defaultHeadData)
+          const headsOffline = (data[line.name][day.date]?.heads || defaultHeadData)
             .filter(head => head.offline === 'Offline')
             .map(head => ({
               head: head.head,
@@ -332,7 +345,8 @@
             section: line.section,
             date: day.date,
             dayLabel: day.label,
-            headsOffline
+            headsOffline,
+            notes: data[line.name][day.date]?.notes || ''
           } : null;
         })
       ).filter(item => item);
@@ -351,7 +365,7 @@
         const dayDate = dates.find(d => d.label === dayLabel)?.date;
         if (!dayDate) return [];
         return lines.flatMap(line => {
-          const headsOffline = (data[line.name][dayDate] || defaultHeadData)
+          const headsOffline = (data[line.name][dayDate]?.heads || defaultHeadData)
             .filter(head => head.offline === 'Offline')
             .map(head => ({
               line: line.name,
@@ -433,6 +447,7 @@
                     <th className="px-4 py-2 text-left">Heads Offline</th>
                     <th className="px-4 py-2 text-left">Issues</th>
                     <th className="px-4 py-2 text-left">Repaired</th>
+                    <th className="px-4 py-2 text-left">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -444,6 +459,7 @@
                       <td className="px-4 py-2">{entry.headsOffline.map(h => h.head).join(', ')}</td>
                       <td className="px-4 py-2">{entry.headsOffline.map(h => h.issue).join(', ')}</td>
                       <td className="px-4 py-2">{entry.headsOffline.map(h => h.repaired).join(', ')}</td>
+                      <td className="px-4 py-2">{entry.notes || 'None'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -572,7 +588,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {(data[currentLine][currentDay] || defaultHeadData).map((head, index) => (
+                  {(data[currentLine][currentDay]?.heads || defaultHeadData).map((head, index) => (
                     <tr key={head.head} className="border-t">
                       <td className="px-4 py-2">{head.head}</td>
                       <td className="px-4 py-2">
@@ -614,6 +630,17 @@
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 className="text-xl font-semibold mb-4">Notes for {currentLine} ({currentDay})</h2>
+            <textarea
+              className="w-full p-2 border rounded-md"
+              rows="4"
+              value={data[currentLine][currentDay]?.notes || ''}
+              onChange={(e) => handleNotesChange(e.target.value)}
+              placeholder="Enter notes for this line and day..."
+            />
           </div>
 
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
