@@ -192,7 +192,7 @@
         return savedDates ? JSON.parse(savedDates) : initialDates;
       });
       const [currentLine, setCurrentLine] = useState('Line 1');
-      const [currentDay, setCurrentDay] = useState('2025-01-11');
+      const [currentDay, setCurrentDay] = useState(dates[0].date || '2025-01-11');
       const [currentPage, setCurrentPage] = useState('main');
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
@@ -203,6 +203,7 @@
           localStorage.setItem('downtimeLoggerData', JSON.stringify(data));
         } catch (e) {
           console.error('Failed to save data to localStorage:', e);
+          setError('Failed to save changes. Storage may be full.');
         }
       }, [data]);
 
@@ -212,6 +213,14 @@
           localStorage.setItem('downtimeLoggerDates', JSON.stringify(dates));
         } catch (e) {
           console.error('Failed to save dates to localStorage:', e);
+          setError('Failed to save dates. Storage may be full.');
+        }
+      }, [dates]);
+
+      // Ensure currentDay is valid when dates change
+      useEffect(() => {
+        if (!dates.some(d => d.date === currentDay)) {
+          setCurrentDay(dates[0].date);
         }
       }, [dates]);
 
@@ -267,10 +276,6 @@
           });
           return newData;
         });
-
-        if (currentDay === oldDate) {
-          setCurrentDay(newDate);
-        }
       };
 
       // Handle dropdown changes for head status
@@ -697,6 +702,5 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9319637748a76750',t:'MTc0NDg2NjMzOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
 </body>
 </html>
