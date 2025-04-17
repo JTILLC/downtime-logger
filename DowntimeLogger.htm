@@ -1,28 +1,3 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                var filteredData = jsonData.filter(row =>
-                    row.some(cell => cell !== '' && cell !== null && cell !== undefined)
-                );
-                var csv = XLSX.utils.aoa_to_sheet(filteredData);
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-</script>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -40,10 +15,35 @@
 <body class="bg-gray-100 font-sans">
   <div id="root" class="container mx-auto p-4"></div>
 
+  <script type="text/javascript">
+    var gk_isXlsx = false;
+    var gk_xlsxFileLookup = {};
+    var gk_fileData = {};
+    function loadFileData(filename) {
+      if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+        try {
+          var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+          var firstSheetName = workbook.SheetNames[0];
+          var worksheet = workbook.Sheets[firstSheetName];
+          var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+          var filteredData = jsonData.filter(row =>
+            row.some(cell => cell !== '' && cell !== null && cell !== undefined)
+          );
+          var csv = XLSX.utils.aoa_to_sheet(filteredData);
+          csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+          return csv;
+        } catch (e) {
+          console.error(e);
+          return "";
+        }
+      }
+      return gk_fileData[filename] || "";
+    }
+  </script>
+
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // Error Boundary Component
     class ErrorBoundary extends React.Component {
       state = { hasError: false, error: null };
 
@@ -70,7 +70,6 @@
       }
     }
 
-    // Line configuration
     const lines = [
       { name: 'Line 1', section: 'PC Line' }, { name: 'Line 2', section: 'PC Line' },
       { name: 'Line 3', section: 'PC Line' }, { name: 'Line 4', section: 'PC Line' },
@@ -95,7 +94,6 @@
       { name: 'Line 38', section: 'Sheeted 2' }, { name: 'Line 39', section: 'Sheeted 2' }
     ];
 
-    // Initial head data for a single day
     const defaultHeadData = Array(14).fill().map((_, i) => ({
       head: i + 1,
       offline: 'Active',
@@ -103,7 +101,6 @@
       repaired: 'N/A'
     }));
 
-    // Initial data for all lines and days
     const initialData = lines.reduce((acc, line) => {
       acc[line.name] = {
         '2025-01-11': [...defaultHeadData],
@@ -122,7 +119,6 @@
       return acc;
     }, {});
 
-    // Initial dates
     const initialDates = [
       { id: 'day1', date: '2025-01-11', label: 'Day 1' },
       { id: 'day2', date: '2025-01-15', label: 'Day 2' },
@@ -131,7 +127,6 @@
       { id: 'day5', date: '2025-02-07', label: 'Day 5' }
     ];
 
-    // Main App Component
     const App = () => {
       const [data, setData] = useState(() => {
         const savedData = localStorage.getItem('downtimeLoggerData');
@@ -146,6 +141,7 @@
       const [currentPage, setCurrentPage] = useState('main');
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
+      const [summaryDay, setSummaryDay] = useState(null);
 
       useEffect(() => {
         try {
@@ -180,7 +176,6 @@
         'Installed Wrong'
       ];
 
-      // Handle date change
       const handleDateChange = (dayId, newDate) => {
         if (!newDate || newDate === '') {
           setError('Please select a valid date.');
@@ -220,7 +215,6 @@
         }
       };
 
-      // Handle dropdown changes for head status
       const handleDropdownChange = (headIndex, field, value) => {
         setData(prev => {
           const newData = { ...prev };
@@ -245,7 +239,6 @@
         });
       };
 
-      // Handle running status change
       const handleRunningChange = (value) => {
         setData(prev => {
           const newData = { ...prev };
@@ -256,7 +249,6 @@
         });
       };
 
-      // Reset to defaults
       const handleReset = () => {
         if (window.confirm('Are you sure you want to reset all data to defaults? This will clear all changes.')) {
           setData(initialData);
@@ -272,7 +264,6 @@
         }
       };
 
-      // Export data to CSV
       const exportToCSV = () => {
         const csvData = [];
         lines.forEach(line => {
@@ -300,7 +291,6 @@
         link.click();
       };
 
-      // Aggregate data for visualizations and summary
       const totalHeadsDownPerDay = dates.map(day => ({
         day: day.label,
         date: day.date,
@@ -328,7 +318,6 @@
         Object.values(data[line.name]).some(day => Array.isArray(day) && day.some(head => head.offline === 'Offline'))
       ).map(line => line.name);
 
-      // Summary page data
       const headsDownSummary = lines.flatMap(line =>
         dates.map(day => {
           const headsOffline = (data[line.name][day.date] || defaultHeadData)
@@ -358,7 +347,68 @@
         }))
       ).filter(item => item.running === 'Yes');
 
-      // Summary Page Component
+      const getDaySummary = (dayLabel) => {
+        const dayDate = dates.find(d => d.label === dayLabel)?.date;
+        if (!dayDate) return [];
+        return lines.flatMap(line => {
+          const headsOffline = (data[line.name][dayDate] || defaultHeadData)
+            .filter(head => head.offline === 'Offline')
+            .map(head => ({
+              line: line.name,
+              section: line.section,
+              head: head.head,
+              issue: head.issue,
+              repaired: head.repaired
+            }));
+          return headsOffline;
+        });
+      };
+
+      const DaySummaryModal = ({ dayLabel }) => {
+        const daySummary = getDaySummary(dayLabel);
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-4xl w-full max-h-[80vh] overflow-y-auto">
+              <h2 className="text-xl font-semibold mb-4">{dayLabel} Offline Heads Summary</h2>
+              {daySummary.length === 0 ? (
+                <p className="text-gray-600">No heads offline on {dayLabel}.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full bg-white shadow-md rounded-lg">
+                    <thead>
+                      <tr className="bg-gray-200">
+                        <th className="px-4 py-2 text-left">Line</th>
+                        <th className="px-4 py-2 text-left">Section</th>
+                        <th className="px-4 py-2 text-left">Head</th>
+                        <th className="px-4 py-2 text-left">Issue</th>
+                        <th className="px-4 py-2 text-left">Repaired</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {daySummary.map((entry, index) => (
+                        <tr key={index} className="border-t">
+                          <td className="px-4 py-2">{entry.line}</td>
+                          <td className="px-4 py-2">{entry.section}</td>
+                          <td className="px-4 py-2">{entry.head}</td>
+                          <td className="px-4 py-2">{entry.issue}</td>
+                          <td className="px-4 py-2">{entry.repaired}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <button
+                className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+                onClick={() => setSummaryDay(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        );
+      };
+
       const SummaryPage = () => (
         <div>
           <h2 className="text-xl font-semibold mb-4">Overall Summary</h2>
@@ -431,17 +481,14 @@
         </div>
       );
 
-      // Main Page Component
       const MainPage = () => (
         <div>
-          {/* Error Message */}
           {error && (
             <div className="bg-red-100 text-red-700 p-4 rounded-md mb-8">
               {error}
             </div>
           )}
 
-          {/* Manage Dates */}
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">Manage Dates</h2>
@@ -467,7 +514,6 @@
             </div>
           </div>
 
-          {/* Line Selector */}
           <div className="mb-8">
             <label className="block text-lg font-semibold mb-2">Select Line:</label>
             <select
@@ -483,7 +529,6 @@
             </select>
           </div>
 
-          {/* Day Selector */}
           <div className="mb-8">
             <label className="block text-lg font-semibold mb-2">Select Day:</label>
             <select
@@ -499,7 +544,6 @@
             </select>
           </div>
 
-          {/* Line Running Status */}
           <div className="mb-8">
             <label className="block text-lg font-semibold mb-2">Is {currentLine} Running?</label>
             <select
@@ -513,7 +557,6 @@
             </select>
           </div>
 
-          {/* Heads Table */}
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
             <h2 className="text-xl font-semibold mb-4">
               {currentLine} - Head Status ({currentDay})
@@ -573,7 +616,6 @@
             </div>
           </div>
 
-          {/* Visualizations */}
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
             <h2 className="text-xl font-semibold mb-4">Heads Down Per Day ({currentLine})</h2>
             <Recharts.ResponsiveContainer width="100%" height={300}>
@@ -616,16 +658,26 @@
             </Recharts.ResponsiveContainer>
           </div>
 
-          {/* Export and Summary */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">Summary</h2>
-              <button
-                className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
-                onClick={exportToCSV}
-              >
-                Export to CSV
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {dates.map(day => (
+                  <button
+                    key={day.label}
+                    className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600"
+                    onClick={() => setSummaryDay(day.label)}
+                  >
+                    {day.label} Offline Summary
+                  </button>
+                ))}
+                <button
+                  className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+                  onClick={exportToCSV}
+                >
+                  Export to CSV
+                </button>
+              </div>
             </div>
             <p className="text-gray-600">
               Total heads down across all lines and days: {totalHeadsDown}.<br />
@@ -636,6 +688,8 @@
                 : `No downtime recorded. Update statuses using the dropdowns to log issues.`}
             </p>
           </div>
+
+          {summaryDay && <DaySummaryModal dayLabel={summaryDay} />}
         </div>
       );
 
@@ -654,7 +708,6 @@
               Manufacturing Downtime Logger
             </h1>
 
-            {/* Navigation Tabs */}
             <div className="flex mb-8">
               <button
                 className={`px-4 py-2 mr-2 rounded-md ${currentPage === 'main' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
@@ -676,10 +729,8 @@
       );
     };
 
-    // Render the app
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9319637748a76750',t:'MTc0NDg2NjMzOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
 </body>
 </html>
