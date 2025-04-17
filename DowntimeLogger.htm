@@ -11,6 +11,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.3/jspdf.plugin.autotable.min.js"></script>
 </head>
@@ -103,31 +104,31 @@
       notes: ''
     }));
 
+    const initialDates = [
+      { id: 'day1', date: '2025-04-13', label: 'Day 1' },
+      { id: 'day2', date: '2025-04-14', label: 'Day 2' },
+      { id: 'day3', date: '2025-04-15', label: 'Day 3' },
+      { id: 'day4', date: '2025-04-16', label: 'Day 4' },
+      { id: 'day5', date: '2025-04-17', label: 'Day 5' }
+    ];
+
     const initialData = lines.reduce((acc, line) => {
       acc[line.name] = {
-        '2025-01-11': { heads: [...defaultHeadData] },
-        '2025-01-15': { heads: [...defaultHeadData] },
-        '2025-01-17': { heads: [...defaultHeadData] },
-        '2025-02-05': { heads: [...defaultHeadData] },
-        '2025-02-07': { heads: [...defaultHeadData] },
+        '2025-04-13': { heads: [...defaultHeadData] },
+        '2025-04-14': { heads: [...defaultHeadData] },
+        '2025-04-15': { heads: [...defaultHeadData] },
+        '2025-04-16': { heads: [...defaultHeadData] },
+        '2025-04-17': { heads: [...defaultHeadData] },
         running: {
-          '2025-01-11': 'No',
-          '2025-01-15': 'No',
-          '2025-01-17': 'No',
-          '2025-02-05': 'No',
-          '2025-02-07': 'No'
+          '2025-04-13': 'No',
+          '2025-04-14': 'No',
+          '2025-04-15': 'No',
+          '2025-04-16': 'No',
+          '2025-04-17': 'No'
         }
       };
       return acc;
     }, {});
-
-    const initialDates = [
-      { id: 'day1', date: '2025-01-11', label: 'Day 1' },
-      { id: 'day2', date: '2025-01-15', label: 'Day 2' },
-      { id: 'day3', date: '2025-01-17', label: 'Day 3' },
-      { id: 'day4', date: '2025-02-05', label: 'Day 4' },
-      { id: 'day5', date: '2025-02-07', label: 'Day 5' }
-    ];
 
     const App = () => {
       const [data, setData] = useState(() => {
@@ -149,7 +150,7 @@
         }
       });
       const [currentLine, setCurrentLine] = useState('Line 1');
-      const [currentDay, setCurrentDay] = useState('2025-01-11');
+      const [currentDay, setCurrentDay] = useState('2025-04-13');
       const [currentPage, setCurrentPage] = useState('main');
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
@@ -192,6 +193,127 @@
         'Hopper Issues',
         'Installed Wrong'
       ];
+
+      const excelDateToJSDate = (serial) => {
+        const utc_days = Math.floor(serial - 25569);
+        const date = new Date(utc_days * 86400 * 1000);
+        return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD
+      };
+
+      const handleFileImport = async (event) => {
+        try {
+          const file = event.target.files[0];
+          if (!file) {
+            setError('No file selected.');
+            return;
+          }
+
+          setLoading(true);
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            try {
+              const arrayBuffer = e.target.result;
+              const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+              const sheet = workbook.Sheets[workbook.SheetNames[0]];
+              const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' });
+
+              const newData = JSON.parse(JSON.stringify(initialData));
+              const excelDates = ['45755', '45757', '45758', '45762', '45764'];
+              const dateMap = {
+                '45755': '2025-04-13',
+                '45757': '2025-04-14',
+                '45758': '2025-04-15',
+                '45762': '2025-04-16',
+                '45764': '2025-04-17'
+              };
+
+              // Process running status from "Day X Run" columns
+              const runData = {};
+              for (let row = 0; row < jsonData.length; row++) {
+                if (jsonData[row][0]?.startsWith('Line')) {
+                  const line = jsonData[row][0];
+                  if (lines.some(l => l.name === line)) {
+                    runData[line] = {};
+                    for (let i = 0; i < excelDates.length; i++) {
+                      const date = dateMap[excelDates[i]];
+                      const status = jsonData[row][i + 1];
+                      runData[line][date] = status === 'Running' ? 'Yes' : 'No';
+                    }
+                  }
+                }
+              }
+
+              // Process head-specific data for offline status
+              let currentLine = null;
+              let currentDay = null;
+              const headData = {};
+              for (let row = 0; row < jsonData.length; row++) {
+                const firstCell = jsonData[row][0]?.toString().trim();
+                if (firstCell?.startsWith('Line')) {
+                  currentLine = firstCell;
+                  headData[currentLine] = headData[currentLine] || {};
+                } else if (firstCell?.startsWith('DAY')) {
+                  const dayMatch = firstCell.match(/DAY\s+(\d+)\s+(\d+)/);
+                  if (dayMatch) {
+                    currentDay = dateMap[dayMatch[2]];
+                    headData[currentLine][currentDay] = headData[currentLine][currentDay] || { heads: [...defaultHeadData] };
+                  }
+                } else if (firstCell === 'Head' && currentLine && currentDay) {
+                  // Map row to day based on position (B6:O6, B13:O13, etc.)
+                  const dayRows = [6, 13, 20, 27, 34].map(r => r - 6); // Adjust for JSON indexing (0-based, skipping headers)
+                  const currentRowIndex = row;
+                  const dayIndex = dayRows.findIndex(r => {
+                    // Check if this row matches a "Head" row for a day
+                    const expectedRow = jsonData.findIndex((r, i) => i >= currentRowIndex && r[0] === 'Head' && i === currentRowIndex);
+                    return expectedRow === currentRowIndex;
+                  });
+                  if (dayIndex !== -1 && dateMap[excelDates[dayIndex]]) {
+                    currentDay = dateMap[excelDates[dayIndex]];
+                    headData[currentLine][currentDay] = headData[currentLine][currentDay] || { heads: [...defaultHeadData] };
+                    const heads = jsonData[row].slice(1, 15).map((val, idx) => ({
+                      head: idx + 1,
+                      offline: val === 'X' ? 'Offline' : 'Active',
+                      issue: 'None', // Preserve default or existing issue
+                      repaired: val === 'X' ? 'N/A' : 'N/A', // Preserve default
+                      notes: '' // Preserve default or existing notes
+                    }));
+                    headData[currentLine][currentDay].heads = heads;
+                  }
+                }
+              }
+
+              // Update running status
+              Object.keys(newData).forEach(line => {
+                if (runData[line]) {
+                  newData[line].running = { ...newData[line].running, ...runData[line] };
+                }
+              });
+
+              // Update head data
+              Object.keys(headData).forEach(line => {
+                if (newData[line]) {
+                  Object.keys(headData[line]).forEach(date => {
+                    newData[line][date] = headData[line][date];
+                  });
+                }
+              });
+
+              setData(newData);
+              setError(null);
+              setLoading(false);
+            } catch (err) {
+              console.error('File parsing error:', err);
+              setError('Failed to parse Excel file. Ensure it matches the expected format.');
+              setLoading(false);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        } catch (err) {
+          console.error('File import error:', err);
+          setError('Failed to import file. Please try again.');
+          setLoading(false);
+        }
+      };
 
       const handleDateChange = (dayId, newDate) => {
         try {
@@ -294,7 +416,7 @@
             setData(initialData);
             setDates(initialDates);
             setCurrentLine('Line 1');
-            setCurrentDay('2025-01-11');
+            setCurrentDay('2025-04-13');
             setSelectedSummaryDay('All Days');
             setSelectedRunningLinesDay('All Days');
             setSelectedIssueType('All Issues');
@@ -399,326 +521,136 @@
           console.log('Heads Down data:', headsDownData);
           doc.autoTable({
             head: [['Line', 'Section', 'Day', 'Heads Offline', 'Issues', 'Repaired', 'Notes']],
-            body: headsDownData.length > 0 ? headsDownData : [['No heads down recorded']],
+            body: headsDownData.length > 0 ? headsDownData : [['No offline heads recorded']],
             startY: yOffset,
-            styles: { fontSize: 8, cellPadding: 2 },
-            columnStyles: { 6: { cellWidth: 30 } },
-            didParseCell: (data) => {
-              console.log('Parsing cell:', data.section, data.row.index, data.column.index);
-            }
-          });
-          yOffset = doc.lastAutoTable.finalY + 10;
-
-          doc.setFontSize(14);
-          doc.text('Running Lines Summary', 20, yOffset);
-          yOffset += 10;
-          console.log('Preparing Running Lines Summary data');
-          const runningLinesData = runningLinesSummary
-            .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
-            .map(entry => [
-              entry.line || 'N/A',
-              entry.section || 'N/A',
-              `${entry.dayLabel} (${entry.date})`,
-              entry.running || 'No'
-            ]);
-
-          console.log('Running Lines data:', runningLinesData);
-          doc.autoTable({
-            head: [['Line', 'Section', 'Day', 'Running Status']],
-            body: runningLinesData.length > 0 ? runningLinesData : [['No lines running']],
-            startY: yOffset,
-            styles: { fontSize: 8, cellPadding: 2 },
-            didParseCell: (data) => {
-              console.log('Parsing cell:', data.section, data.row.index, data.column.index);
-            }
+            styles: { fontSize: 10 },
+            headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255] },
+            bodyStyles: { minCellHeight: 10 }
           });
 
-          const fileName = `Downtime_Report_${selectedSummaryDay === 'All Days' ? 'All_Days' : selectedSummaryDay}.pdf`;
-          console.log('Saving PDF as:', fileName);
-          doc.save(fileName);
-          console.log('PDF export completed');
+          doc.save(`Downtime_Report_${selectedSummaryDay.replace(/\s+/g, '_')}.pdf`);
         } catch (e) {
-          console.error('exportToPDF error:', e.message, e.stack);
-          setError(`Failed to generate PDF: ${e.message}. Please try again.`);
+          console.error('exportToPDF error:', e);
+          setError('Failed to export PDF. Please try again.');
         }
       };
 
-      const handleFileImport = (event) => {
-        try {
-          const file = event.target.files[0];
-          if (!file) return;
-
-          const fileExtension = file.name.split('.').pop().toLowerCase();
-          if (!['csv', 'xlsx'].includes(fileExtension)) {
-            setError('Please upload a CSV or XLSX file.');
-            return;
-          }
-
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            try {
-              let parsedData;
-              if (fileExtension === 'csv') {
-                parsedData = Papa.parse(e.target.result, { header: true, skipEmptyLines: true });
-                if (parsedData.errors.length > 0) {
-                  setError('Error parsing CSV file.');
-                  return;
-                }
-                parsedData = parsedData.data;
-              } else {
-                const workbook = XLSX.read(e.target.result, { type: 'array' });
-                const sheetName = workbook.SheetNames[0];
-                parsedData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
-                parsedData = parsedData.slice(1).map(row => ({
-                  Line: row[0],
-                  Section: row[1],
-                  Date: row[2],
-                  Running: row[3],
-                  ...Object.fromEntries(
-                    Array(14).fill().flatMap((_, i) => [
-                      [`Head${i + 1}_Offline`, row[4 + i * 3]],
-                      [`Head${i + 1}_Issue`, row[5 + i * 3]],
-                      [`Head${i + 1}_Notes`, row[6 + i * 3] || '']
-                    ])
-                  )
-                }));
-              }
-
-              const newData = { ...initialData };
-              const validLines = lines.map(l => l.name);
-              const validDates = dates.map(d => d.date);
-
-              for (const row of parsedData) {
-                if (!validLines.includes(row.Line) || !validDates.includes(row.Date)) {
-                  setError(`Invalid line (${row.Line}) or date (${row.Date}) in file.`);
-                  return;
-                }
-                newData[row.Line][row.Date] = {
-                  heads: Array(14).fill().map((_, i) => ({
-                    head: i + 1,
-                    offline: row[`Head${i + 1}_Offline`] || 'Active',
-                    issue: row[`Head${i + 1}_Issue`] || 'None',
-                    repaired: row[`Head${i + 1}_Repaired`] || 'N/A',
-                    notes: row[`Head${i + 1}_Notes`] || ''
-                  }))
-                };
-                newData[row.Line].running[row.Date] = row.Running || 'No';
-              }
-
-              if (window.confirm('Importing will overwrite existing data. Proceed?')) {
-                setData(newData);
-                setError(null);
-                console.log('Imported data successfully');
-              }
-            } catch (err) {
-              console.error('File import parsing error:', err);
-              setError('Failed to parse file. Ensure correct format.');
-            }
-          };
-
-          if (fileExtension === 'csv') {
-            reader.readAsText(file);
-          } else {
-            reader.readAsArrayBuffer(file);
-          }
-        } catch (e) {
-          console.error('handleFileImport error:', e);
-          setError('Failed to import file. Please try again.');
-        }
-      };
-
-      const totalHeadsDownPerDay = dates.map(day => {
-        try {
-          return {
-            day: day.label,
-            date: day.date,
-            heads: (data[currentLine][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length
-          };
-        } catch (e) {
-          console.error('totalHeadsDownPerDay error:', e);
-          return { day: day.label, date: day.date, heads: 0 };
-        }
-      });
-
-      const issueCounts = issueTypes
-        .map(issue => {
-          try {
-            return {
-              issue,
-              count: Object.values(data)
-                .flatMap(line => Object.values(line).filter(v => v.heads).flatMap(v => v.heads))
-                .filter(head => head.issue === issue).length
-            };
-          } catch (e) {
-            console.error('issueCounts error:', e);
-            return { issue, count: 0 };
-          }
-        })
-        .filter(item => item.count > 0);
-
-      const issueTrends = dates.map(day => {
-        try {
-          const counts = issueTypes.reduce((acc, issue) => {
-            acc[issue] = Object.values(data)
-              .flatMap(line => (line[day.date]?.heads || defaultHeadData))
-              .filter(head => head.issue === issue).length;
-            return acc;
-          }, {});
-          return { day: day.label, date: day.date, ...counts };
-        } catch (e) {
-          console.error('issueTrends error:', e);
-          return { day: day.label, date: day.date, ...issueTypes.reduce((acc, issue) => ({ ...acc, [issue]: 0 }), {}) };
-        }
-      });
-
-      const totalHeadsDown = (() => {
-        try {
-          return Object.values(data)
-            .flatMap(line => Object.values(line).filter(v => v.heads).flatMap(v => v.heads))
-            .filter(head => head.offline === 'Offline').length;
-        } catch (e) {
-          console.error('totalHeadsDown error:', e);
-          return 0;
-        }
-      })();
-
-      const totalLinesRunning = lines.reduce((count, line) => {
-        try {
-          return count + dates.reduce((dayCount, day) =>
-            dayCount + (data[line.name].running[day.date] === 'Yes' ? 1 : 0), 0);
-        } catch (e) {
-          console.error('totalLinesRunning error:', e);
-          return count;
-        }
+      const totalHeadsDown = Object.keys(data).reduce((sum, line) => {
+        return sum + dates.reduce((daySum, day) => {
+          return daySum + (data[line][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length;
+        }, 0);
       }, 0);
 
-      const activeLines = lines.filter(line => {
-        try {
-          return Object.values(data[line.name]).some(day => day.heads && day.heads.some(head => head.offline === 'Offline'));
-        } catch (e) {
-          console.error('activeLines error:', e);
-          return false;
-        }
-      }).map(line => line.name);
+      const totalLinesRunning = Object.keys(data).reduce((sum, line) => {
+        return sum + dates.reduce((daySum, day) => {
+          return daySum + (data[line].running[day.date] === 'Yes' ? 1 : 0);
+        }, 0);
+      }, 0);
+
+      const issueCounts = issueTypes
+        .filter(issue => issue !== 'None')
+        .map(issue => ({
+          issue,
+          count: Object.keys(data).reduce((sum, line) => {
+            return sum + dates.reduce((daySum, day) => {
+              return daySum + (data[line][day.date]?.heads || defaultHeadData).filter(head => head.issue === issue).length;
+            }, 0);
+          }, 0)
+        }))
+        .filter(ic => ic.count > 0);
+
+      const activeLines = Object.keys(data).filter(line =>
+        dates.some(day => (data[line][day.date]?.heads || defaultHeadData).some(head => head.offline === 'Offline'))
+      );
 
       const headsDownSummary = lines.flatMap(line =>
         dates.map(day => {
-          try {
-            const headsOffline = (data[line.name][day.date]?.heads || defaultHeadData)
-              .filter(head => head.offline === 'Offline')
-              .map(head => ({
-                head: head.head,
-                issue: head.issue,
-                repaired: head.repaired,
-                notes: head.notes
-              }));
-            return headsOffline.length > 0 ? {
-              line: line.name,
-              section: line.section,
-              date: day.date,
-              dayLabel: day.label,
-              headsOffline
-            } : null;
-          } catch (e) {
-            console.error('headsDownSummary error:', e);
-            return null;
-          }
+          const headsOffline = (data[line.name][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline');
+          return {
+            line: line.name,
+            section: line.section,
+            date: day.date,
+            dayLabel: day.label,
+            headsOffline
+          };
         })
-      ).filter(item => item);
+      ).filter(entry => entry.headsOffline.length > 0);
 
-      const runningLinesSummary = lines.flatMap(line =>
-        dates.map(day => {
-          try {
+      const totalHeadsDownPerDay = dates.map(day => ({
+        day: day.label,
+        date: day.date,
+        heads: Object.keys(data).reduce((sum, line) => {
+          return sum + (data[line][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length;
+        }, 0)
+      }));
+
+      const runningLinesPerDay = dates.map(day => ({
+        day: day.label,
+        date: day.date,
+        lines: Object.keys(data).reduce((sum, line) => {
+          return sum + (data[line].running[day.date] === 'Yes' ? 1 : 0);
+        }, 0)
+      }));
+
+      const issueTrends = dates.map(day => {
+        const counts = { day: day.label };
+        issueTypes.filter(issue => issue !== 'None').forEach(issue => {
+          counts[issue] = Object.keys(data).reduce((sum, line) => {
+            return sum + (data[line][day.date]?.heads || defaultHeadData).filter(head => head.issue === issue).length;
+          }, 0);
+        });
+        return counts;
+      });
+
+      const DaySummaryModal = ({ dayLabel }) => {
+        const day = dates.find(d => d.label === dayLabel);
+        if (!day) return null;
+
+        const daySummary = lines
+          .map(line => {
+            const headsOffline = (data[line.name][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline');
             return {
               line: line.name,
               section: line.section,
-              date: day.date,
-              dayLabel: day.label,
-              running: data[line.name].running[day.date] || 'No'
+              headsOffline
             };
-          } catch (e) {
-            console.error('runningLinesSummary error:', e);
-            return null;
-          }
-        })
-      ).filter(item => item && item.running === 'Yes');
+          })
+          .filter(entry => entry.headsOffline.length > 0);
 
-      const runningLinesPerDay = dates.map(day => {
-        try {
-          const count = runningLinesSummary.filter(entry => entry.date === day.date).length;
-          console.log(`Running lines for ${day.label}: ${count}`);
-          return {
-            day: day.label,
-            date: day.date,
-            lines: count
-          };
-        } catch (e) {
-          console.error('runningLinesPerDay error:', e);
-          return { day: day.label, date: day.date, lines: 0 };
-        }
-      });
-
-      const getDaySummary = (dayLabel) => {
-        try {
-          const dayDate = dates.find(d => d.label === dayLabel)?.date;
-          if (!dayDate) return [];
-          return lines.flatMap(line => {
-            const headsOffline = (data[line.name][dayDate]?.heads || defaultHeadData)
-              .filter(head => head.offline === 'Offline')
-              .map(head => ({
-                line: line.name,
-                section: line.section,
-                head: head.head,
-                issue: head.issue,
-                repaired: head.repaired,
-                notes: head.notes
-              }));
-            return headsOffline;
-          });
-        } catch (e) {
-          console.error('getDaySummary error:', e);
-          return [];
-        }
-      };
-
-      const DaySummaryModal = ({ dayLabel }) => {
-        const daySummary = getDaySummary(dayLabel);
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-lg max-w-4xl w-full max-h-[80vh] overflow-y-auto">
-              <h2 className="text-xl font-semibold mb-4">{dayLabel} Offline Heads Summary</h2>
-              {daySummary.length === 0 ? (
-                <p className="text-gray-600">No heads offline on {dayLabel}.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full bg-white shadow-md rounded-lg">
-                    <thead>
-                      <tr className="bg-gray-200">
-                        <th className="px-4 py-2 text-left">Line</th>
-                        <th className="px-4 py-2 text-left">Section</th>
-                        <th className="px-4 py-2 text-left">Head</th>
-                        <th className="px-4 py-2 text-left">Issue</th>
-                        <th className="px-4 py-2 text-left">Repaired</th>
-                        <th className="px-4 py-2 text-left">Notes</th>
+              <h2 className="text-2xl font-semibold mb-4">{dayLabel} Offline Summary ({day.date})</h2>
+              <table className="min-w-full bg-white">
+                <thead>
+                  <tr className="bg-gray-200">
+                    <th className="px-4 py-2 text-left">Line</th>
+                    <th className="px-4 py-2 text-left">Section</th>
+                    <th className="px-4 py-2 text-left">Heads Offline</th>
+                    <th className="px-4 py-2 text-left">Issues</th>
+                    <th className="px-4 py-2 text-left">Repaired</th>
+                    <th className="px-4 py-2 text-left">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {daySummary.length > 0 ? (
+                    daySummary.map((entry, index) => (
+                      <tr key={index} className="border-t">
+                        <td className="px-4 py-2">{entry.line}</td>
+                        <td className="px-4 py-2">{entry.section}</td>
+                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.head).join(', ') || 'None'}</td>
+                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.issue).join(', ') || 'None'}</td>
+                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.repaired).join(', ') || 'None'}</td>
+                        <td className="px-4 py-2">{entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ') || 'None'}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {daySummary.map((entry, index) => (
-                        <tr key={index} className="border-t">
-                          <td className="px-4 py-2">{entry.line}</td>
-                          <td className="px-4 py-2">{entry.section}</td>
-                          <td className="px-4 py-2">{entry.head}</td>
-                          <td className="px-4 py-2">{entry.issue}</td>
-                          <td className="px-4 py-2">{entry.repaired}</td>
-                          <td className="px-4 py-2 max-w-xs truncate" title={entry.notes || 'None'}>
-                            {entry.notes || 'None'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="px-4 py-2 text-center">No offline heads recorded.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
               <button
                 className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
                 onClick={() => setSummaryDay(null)}
@@ -732,166 +664,110 @@
 
       const DashboardPage = () => (
         <div>
-          <h2 className="text-xl font-semibold mb-4">Line Status Dashboard</h2>
-          <div className="mb-4">
-            <label className="block text-lg font-semibold mb-2">Select Day:</label>
-            <select
-              className="w-full p-2 border rounded-md"
-              value={selectedSummaryDay}
-              onChange={(e) => {
-                console.log('Selected dashboard day:', e.target.value);
-                setSelectedSummaryDay(e.target.value);
-                setSelectedRunningLinesDay(e.target.value);
-              }}
-            >
-              <option value="All Days">All Days</option>
-              {dates.map(day => (
-                <option key={day.date} value={day.date}>
-                  {day.label} ({day.date})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {lines.map(line => {
-              const dayData = data[line.name][selectedSummaryDay === 'All Days' ? dates[0].date : selectedSummaryDay];
-              const offlineHeads = dayData?.heads?.filter(h => h.offline === 'Offline')?.length || 0;
-              const notes = dayData?.heads?.filter(h => h.notes).map(h => `Head ${h.head}: ${h.notes}`).join('; ') || 'None';
-              const runningStatus = data[line.name].running[selectedSummaryDay === 'All Days' ? dates[0].date : selectedSummaryDay] || 'No';
-              const bgColor = runningStatus === 'Yes' ? 'bg-green-100' : offlineHeads > 0 ? 'bg-red-100' : 'bg-gray-100';
-              return (
-                <div key={line.name} className={`p-4 rounded-lg shadow-md ${bgColor}`}>
-                  <h3 className="text-lg font-semibold">{line.name} ({line.section})</h3>
-                  <p><strong>Running:</strong> {runningStatus}</p>
-                  <p><strong>Offline Heads:</strong> {offlineHeads}</p>
-                  <p className="truncate" title={notes}><strong>Notes:</strong> {notes}</p>
+          <h2 className="text-2xl font-semibold mb-6">Real-Time Dashboard</h2>
+          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h3 className="text-xl font-semibold mb-4">Line Status Overview</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {lines.map(line => (
+                <div key={line.name} className="p-4 bg-gray-50 rounded-md">
+                  <h4 className="font-medium">{line.section}: {line.name}</h4>
+                  <p>Running: {data[line.name].running[currentDay] || 'No'}</p>
+                  <p>Heads Down: {(data[line.name][currentDay]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length}</p>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         </div>
       );
 
       const SummaryPage = () => (
         <div>
-          <h2 className="text-xl font-semibold mb-4">Overall Summary</h2>
-          <div className="bg-gray-50 p-4 rounded-md mb-8">
-            <p className="text-gray-700">
-              <strong>Total Lines Running:</strong> {totalLinesRunning} (lines marked "Yes" across all days)<br />
-              <strong>Total Heads Offline:</strong> {totalHeadsDown} (heads marked "Offline" across all lines and days)
-            </p>
-          </div>
-
-          <h2 className="text-xl font-semibold mb-4">Heads Down Summary</h2>
-          <div className="mb-4">
-            <label className="block text-lg font-semibold mb-2">Select Day:</label>
-            <select
-              className="w-full p-2 border rounded-md"
-              value={selectedSummaryDay}
-              onChange={(e) => {
-                console.log('Selected heads down summary day:', e.target.value);
-                setSelectedSummaryDay(e.target.value);
-                setSelectedRunningLinesDay(e.target.value);
-              }}
-            >
-              <option value="All Days">All Days</option>
-              {dates.map(day => (
-                <option key={day.date} value={day.date}>
-                  {day.label} ({day.date})
-                </option>
-              ))}
-            </select>
-          </div>
-          {headsDownSummary.filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay).length === 0 ? (
-            <p className="text-gray-600">No heads down recorded for {selectedSummaryDay === 'All Days' ? 'any day' : dates.find(d => d.date === selectedSummaryDay)?.label}.</p>
-          ) : (
-            <div className="overflow-x-auto mb-8">
-              <table className="min-w-full bg-white shadow-md rounded-lg">
-                <thead>
-                  <tr className="bg-gray-200">
-                    <th className="px-4 py-2 text-left">Line</th>
-                    <th className="px-4 py-2 text-left">Section</th>
-                    <th className="px-4 py-2 text-left">Day</th>
-                    <th className="px-4 py-2 text-left">Heads Offline</th>
-                    <th className="px-4 py-2 text-left">Issues</th>
-                    <th className="px-4 py-2 text-left">Repaired</th>
-                    <th className="px-4 py-2 text-left">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {headsDownSummary
-                    .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
-                    .map((entry, index) => (
-                      <tr key={index} className="border-t">
-                        <td className="px-4 py-2">{entry.line}</td>
-                        <td className="px-4 py-2">{entry.section}</td>
-                        <td className="px-4 py-2">{entry.dayLabel} ({entry.date})</td>
-                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.head).join(', ')}</td>
-                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.issue).join(', ')}</td>
-                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.repaired).join(', ')}</td>
-                        <td className="px-4 py-2 max-w-xs truncate" title={entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')}>
-                          {entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+          <h2 className="text-2xl font-semibold mb-6">Summary Page</h2>
+          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h3 className="text-xl font-semibold mb-4">Heads Down Summary</h3>
+            <div className="mb-4">
+              <label className="block text-lg font-semibold mb-2">Select Day:</label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={selectedSummaryDay}
+                onChange={(e) => setSelectedSummaryDay(e.target.value)}
+              >
+                <option value="All Days">All Days</option>
+                {dates.map(day => (
+                  <option key={day.date} value={day.date}>{day.label} ({day.date})</option>
+                ))}
+              </select>
             </div>
-          )}
-
-          <h2 className="text-xl font-semibold mb-4">Running Lines Summary</h2>
-          <div className="mb-4">
-            <label className="block text-lg font-semibold mb-2">Select Day:</label>
-            <select
-              className="w-full p-2 border rounded-md"
-              value={selectedRunningLinesDay}
-              onChange={(e) => {
-                console.log('Selected running lines summary day:', e.target.value);
-                setSelectedRunningLinesDay(e.target.value);
-                setSelectedSummaryDay(e.target.value);
-              }}
-            >
-              <option value="All Days">All Days</option>
-              {dates.map(day => (
-                <option key={day.date} value={day.date}>
-                  {day.label} ({day.date})
-                </option>
-              ))}
-            </select>
-          </div>
-          {runningLinesSummary.filter(entry => selectedRunningLinesDay === 'All Days' || entry.date === selectedRunningLinesDay).length === 0 ? (
-            <p className="text-gray-600">No lines marked as running for {selectedRunningLinesDay === 'All Days' ? 'any day' : dates.find(d => d.date === selectedRunningLinesDay)?.label}.</p>
-          ) : (
-            <div className="overflow-x-auto mb-8">
-              <table className="min-w-full bg-white shadow-md rounded-lg">
-                <thead>
-                  <tr className="bg-gray-200">
-                    <th className="px-4 py-2 text-left">Line</th>
-                    <th className="px-4 py-2 text-left">Section</th>
-                    <th className="px-4 py-2 text-left">Day</th>
-                    <th className="px-4 py-2 text-left">Running Status</th>
+            <table className="min-w-full bg-white">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="px-4 py-2 text-left">Line</th>
+                  <th className="px-4 py-2 text-left">Section</th>
+                  <th className="px-4 py-2 text-left">Day</th>
+                  <th className="px-4 py-2 text-left">Heads Offline</th>
+                  <th className="px-4 py-2 text-left">Issues</th>
+                  <th className="px-4 py-2 text-left">Repaired</th>
+                  <th className="px-4 py-2 text-left">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {headsDownSummary
+                  .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
+                  .map((entry, index) => (
+                    <tr key={index} className="border-t">
+                      <td className="px-4 py-2">{entry.line}</td>
+                      <td className="px-4 py-2">{entry.section}</td>
+                      <td className="px-4 py-2">{entry.dayLabel} ({entry.date})</td>
+                      <td className="px-4 py-2">{entry.headsOffline.map(h => h.head).join(', ') || 'None'}</td>
+                      <td className="px-4 py-2">{entry.headsOffline.map(h => h.issue).join(', ') || 'None'}</td>
+                      <td className="px-4 py-2">{entry.headsOffline.map(h => h.repaired).join(', ') || 'None'}</td>
+                      <td className="px-4 py-2">{entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ') || 'None'}</td>
+                    </tr>
+                  ))}
+                {headsDownSummary.filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay).length === 0 && (
+                  <tr>
+                    <td colSpan="7" className="px-4 py-2 text-center">No offline heads recorded.</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {runningLinesSummary
-                    .filter(entry => selectedRunningLinesDay === 'All Days' || entry.date === selectedRunningLinesDay)
-                    .map((entry, index) => (
-                      <tr key={index} className="border-t">
-                        <td className="px-4 py-2">{entry.line}</td>
-                        <td className="px-4 py-2">{entry.section}</td>
-                        <td className="px-4 py-2">{entry.dayLabel} ({entry.date})</td>
-                        <td className="px-4 py-2">{entry.running}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                )}
+              </tbody>
+            </table>
+          </div>
 
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-semibold mb-4">Running Lines Per Day</h2>
+            <h3 className="text-xl font-semibold mb-4">Running Lines Summary</h3>
+            <div className="mb-4">
+              <label className="block text-lg font-semibold mb-2">Select Day:</label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={selectedRunningLinesDay}
+                onChange={(e) => setSelectedRunningLinesDay(e.target.value)}
+              >
+                <option value="All Days">All Days</option>
+                {dates.map(day => (
+                  <option key={day.date} value={day.date}>{day.label} ({day.date})</option>
+                ))}
+              </select>
+            </div>
+            <table className="min-w-full bg-white">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="px-4 py-2 text-left">Day</th>
+                  <th className="px-4 py-2 text-left">Lines Running</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runningLinesPerDay
+                  .filter(day => selectedRunningLinesDay === 'All Days' || day.date === selectedRunningLinesDay)
+                  .map((day, index) => (
+                    <tr key={index} className="border-t">
+                      <td className="px-4 py-2">{day.day} ({day.date})</td>
+                      <td className="px-4 py-2">{day.lines}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
             <Recharts.ResponsiveContainer width="100%" height={300}>
-              <Recharts.BarChart 
+              <Recharts.BarChart
                 data={runningLinesPerDay.filter(day => selectedRunningLinesDay === 'All Days' || day.date === selectedRunningLinesDay)}
               >
                 <Recharts.CartesianGrid strokeDasharray="3 3" />
@@ -908,7 +784,7 @@
           </div>
 
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-semibold mb-4">Issue Trends Over Time</h2>
+            <h3 className="text-xl font-semibold mb-4">Issue Trends Over Time</h3>
             <div className="mb-4">
               <label className="block text-lg font-semibold mb-2">Select Issue Type:</label>
               <select
