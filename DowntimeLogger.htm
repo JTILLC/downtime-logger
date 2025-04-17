@@ -8,45 +8,11 @@
                 var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
                 var firstSheetName = workbook.SheetNames[0];
                 var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
                 var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
                 var filteredData = jsonData.filter(row =>
                     row.some(cell => cell !== '' && cell !== null && cell !== undefined)
                 );
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row =>
-                    row.some(cell => cell !== '' && cell !== null && cell !== undefined)
-                );
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData); // Create a new sheet from filtered array of arrays
+                var csv = XLSX.utils.aoa_to_sheet(filteredData);
                 csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
                 return csv;
             } catch (e) {
@@ -140,22 +106,7 @@
     // Initial data for all lines and days
     const initialData = lines.reduce((acc, line) => {
       acc[line.name] = {
-        '2025-01-11': line.name === 'Line 1' ? [
-          { head: 1, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 2, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 3, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 4, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 5, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 6, offline: 'Offline', issue: 'Chute', repaired: 'Fixed' },
-          { head: 7, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 8, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 9, offline: 'Offline', issue: 'Operator', repaired: 'Fixed' },
-          { head: 10, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 11, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 12, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 13, offline: 'Active', issue: 'None', repaired: 'N/A' },
-          { head: 14, offline: 'Active', issue: 'None', repaired: 'N/A' }
-        ] : [...defaultHeadData],
+        '2025-01-11': [...defaultHeadData],
         '2025-01-15': [...defaultHeadData],
         '2025-01-17': [...defaultHeadData],
         '2025-02-05': [...defaultHeadData],
@@ -182,7 +133,6 @@
 
     // Main App Component
     const App = () => {
-      // Initialize state from localStorage or defaults
       const [data, setData] = useState(() => {
         const savedData = localStorage.getItem('downtimeLoggerData');
         return savedData ? JSON.parse(savedData) : initialData;
@@ -192,40 +142,28 @@
         return savedDates ? JSON.parse(savedDates) : initialDates;
       });
       const [currentLine, setCurrentLine] = useState('Line 1');
-      const [currentDay, setCurrentDay] = useState(dates[0].date || '2025-01-11');
+      const [currentDay, setCurrentDay] = useState('2025-01-11');
       const [currentPage, setCurrentPage] = useState('main');
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
 
-      // Save data to localStorage whenever it changes
       useEffect(() => {
         try {
           localStorage.setItem('downtimeLoggerData', JSON.stringify(data));
         } catch (e) {
           console.error('Failed to save data to localStorage:', e);
-          setError('Failed to save changes. Storage may be full.');
         }
       }, [data]);
 
-      // Save dates to localStorage whenever they change
       useEffect(() => {
         try {
           localStorage.setItem('downtimeLoggerDates', JSON.stringify(dates));
         } catch (e) {
           console.error('Failed to save dates to localStorage:', e);
-          setError('Failed to save dates. Storage may be full.');
-        }
-      }, [dates]);
-
-      // Ensure currentDay is valid when dates change
-      useEffect(() => {
-        if (!dates.some(d => d.date === currentDay)) {
-          setCurrentDay(dates[0].date);
         }
       }, [dates]);
 
       useEffect(() => {
-        // Simulate CSV loading (replace with actual loadFileData in production)
         setTimeout(() => {
           setLoading(false);
         }, 500);
@@ -276,6 +214,10 @@
           });
           return newData;
         });
+
+        if (currentDay === oldDate) {
+          setCurrentDay(newDate);
+        }
       };
 
       // Handle dropdown changes for head status
@@ -312,6 +254,22 @@
           newData[currentLine] = lineData;
           return newData;
         });
+      };
+
+      // Reset to defaults
+      const handleReset = () => {
+        if (window.confirm('Are you sure you want to reset all data to defaults? This will clear all changes.')) {
+          setData(initialData);
+          setDates(initialDates);
+          setCurrentLine('Line 1');
+          setCurrentDay('2025-01-11');
+          try {
+            localStorage.removeItem('downtimeLoggerData');
+            localStorage.removeItem('downtimeLoggerDates');
+          } catch (e) {
+            console.error('Failed to clear localStorage:', e);
+          }
+        }
       };
 
       // Export data to CSV
@@ -362,6 +320,10 @@
         .flatMap(line => Object.values(line).filter(v => Array.isArray(v)).flat())
         .filter(head => head.offline === 'Offline').length;
 
+      const totalLinesRunning = lines.reduce((count, line) =>
+        count + dates.reduce((dayCount, day) =>
+          dayCount + (data[line.name].running[day.date] === 'Yes' ? 1 : 0), 0), 0);
+
       const activeLines = lines.filter(line =>
         Object.values(data[line.name]).some(day => Array.isArray(day) && day.some(head => head.offline === 'Offline'))
       ).map(line => line.name);
@@ -399,6 +361,14 @@
       // Summary Page Component
       const SummaryPage = () => (
         <div>
+          <h2 className="text-xl font-semibold mb-4">Overall Summary</h2>
+          <div className="bg-gray-50 p-4 rounded-md mb-8">
+            <p className="text-gray-700">
+              <strong>Total Lines Running:</strong> {totalLinesRunning} (lines marked "Yes" across all days)<br />
+              <strong>Total Heads Offline:</strong> {totalHeadsDown} (heads marked "Offline" across all lines and days)
+            </p>
+          </div>
+
           <h2 className="text-xl font-semibold mb-4">Heads Down Summary</h2>
           {headsDownSummary.length === 0 ? (
             <p className="text-gray-600">No heads down recorded.</p>
@@ -473,7 +443,15 @@
 
           {/* Manage Dates */}
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-semibold mb-4">Manage Dates</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Manage Dates</h2>
+              <button
+                className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+                onClick={handleReset}
+              >
+                Reset to Defaults
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {dates.map(day => (
                 <div key={day.id}>
@@ -653,9 +631,9 @@
               Total heads down across all lines and days: {totalHeadsDown}.<br />
               Issues recorded: {issueCounts.map(ic => `${ic.issue}: ${ic.count}`).join(', ') || 'None'}.<br />
               Active lines with downtime: {activeLines.length > 0 ? activeLines.join(', ') : 'None'}.<br />
-              {activeLines.length === 1 && activeLines[0] === 'Line 1' && dates[0].date === '2025-01-11'
-                ? `Only Line 1 on ${dates[0].date} shows downtime, with 2 heads offline (Chute and Operator issues, both Fixed). Other lines and days report no issues, which may indicate incomplete data logging.`
-                : `Downtime is recorded across ${activeLines.length} line(s). Update statuses using the dropdowns to log new issues.`}
+              {activeLines.length > 0
+                ? `Downtime is recorded across ${activeLines.length} line(s). Update statuses using the dropdowns to log new issues.`
+                : `No downtime recorded. Update statuses using the dropdowns to log issues.`}
             </p>
           </div>
         </div>
@@ -702,5 +680,6 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9319637748a76750',t:'MTc0NDg2NjMzOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
 </body>
 </html>
