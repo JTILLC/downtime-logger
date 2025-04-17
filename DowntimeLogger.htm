@@ -12,6 +12,7 @@
   <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.3/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body class="bg-gray-100 font-sans">
   <div id="root" class="container mx-auto p-4"></div>
@@ -345,6 +346,13 @@
 
       const exportToPDF = () => {
         try {
+          console.log('Starting PDF export for day:', selectedSummaryDay);
+          if (!window.jspdf || !window.jspdf.jsPDF) {
+            console.error('jsPDF not loaded');
+            setError('PDF library failed to load. Please try again.');
+            return;
+          }
+
           const { jsPDF } = window.jspdf;
           const doc = new jsPDF();
           const pageWidth = doc.internal.pageSize.getWidth();
@@ -353,72 +361,85 @@
           doc.setFontSize(16);
           doc.text('Ishida CCW Downtime Report', pageWidth / 2, yOffset, { align: 'center' });
           yOffset += 10;
+
           doc.setFontSize(12);
-          doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth / 2, yOffset, { align: 'center' });
+          const currentDate = new Date().toLocaleString();
+          console.log('Adding date to PDF:', currentDate);
+          doc.text(`Generated: ${currentDate}`, pageWidth / 2, yOffset, { align: 'center' });
           yOffset += 10;
 
-          if (selectedSummaryDay !== 'All Days') {
-            const dayLabel = dates.find(d => d.date === selectedSummaryDay)?.label || selectedSummaryDay;
-            doc.text(`Day: ${dayLabel} (${selectedSummaryDay})`, 20, yOffset);
-            yOffset += 10;
-          } else {
-            doc.text('Day: All Days', 20, yOffset);
-            yOffset += 10;
-          }
+          const dayLabel = selectedSummaryDay === 'All Days' ? 'All Days' : dates.find(d => d.date === selectedSummaryDay)?.label || selectedSummaryDay;
+          console.log('Adding day label to PDF:', dayLabel);
+          doc.text(`Day: ${dayLabel}${selectedSummaryDay !== 'All Days' ? ` (${selectedSummaryDay})` : ''}`, 20, yOffset);
+          yOffset += 10;
 
           doc.setFontSize(14);
           doc.text('Overall Summary', 20, yOffset);
           yOffset += 10;
           doc.setFontSize(12);
+          console.log('Adding metrics: lines running=', totalLinesRunning, 'heads offline=', totalHeadsDown);
           doc.text(`Total Lines Running: ${totalLinesRunning}`, 20, yOffset);
           yOffset += 5;
           doc.text(`Total Heads Offline: ${totalHeadsDown}`, 20, yOffset);
           yOffset += 10;
 
+          console.log('Preparing Heads Down Summary data');
           const headsDownData = headsDownSummary
             .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
             .map(entry => [
-              entry.line,
-              entry.section,
+              entry.line || 'N/A',
+              entry.section || 'N/A',
               `${entry.dayLabel} (${entry.date})`,
-              entry.headsOffline.map(h => h.head).join(', '),
-              entry.headsOffline.map(h => h.issue).join(', '),
-              entry.headsOffline.map(h => h.repaired).join(', '),
-              entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')
+              entry.headsOffline.map(h => h.head).join(', ') || 'None',
+              entry.headsOffline.map(h => h.issue).join(', ') || 'None',
+              entry.headsOffline.map(h => h.repaired).join(', ') || 'None',
+              entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ') || 'None'
             ]);
 
+          console.log('Heads Down data:', headsDownData);
           doc.autoTable({
             head: [['Line', 'Section', 'Day', 'Heads Offline', 'Issues', 'Repaired', 'Notes']],
             body: headsDownData.length > 0 ? headsDownData : [['No heads down recorded']],
             startY: yOffset,
-            styles: { fontSize: 10 },
-            columnStyles: { 6: { cellWidth: 40 } }
+            styles: { fontSize: 8, cellPadding: 2 },
+            columnStyles: { 6: { cellWidth: 30 } },
+            didParseCell: (data) => {
+              console.log('Parsing cell:', data.section, data.row.index, data.column.index);
+            }
           });
           yOffset = doc.lastAutoTable.finalY + 10;
 
           doc.setFontSize(14);
           doc.text('Running Lines Summary', 20, yOffset);
           yOffset += 10;
+          console.log('Preparing Running Lines Summary data');
           const runningLinesData = runningLinesSummary
             .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
             .map(entry => [
-              entry.line,
-              entry.section,
+              entry.line || 'N/A',
+              entry.section || 'N/A',
               `${entry.dayLabel} (${entry.date})`,
-              entry.running
+              entry.running || 'No'
             ]);
 
+          console.log('Running Lines data:', runningLinesData);
           doc.autoTable({
             head: [['Line', 'Section', 'Day', 'Running Status']],
             body: runningLinesData.length > 0 ? runningLinesData : [['No lines running']],
             startY: yOffset,
-            styles: { fontSize: 10 }
+            styles: { fontSize: 8, cellPadding: 2 },
+            didParseCell: (data) => {
+              console.log('Parsing cell:', data.section, data.row.index, data.column.index);
+            }
           });
 
-          doc.save(`Downtime_Report_${selectedSummaryDay === 'All Days' ? 'All_Days' : selectedSummaryDay}.pdf`);
+          const fileName = `Downtime_Report_${selectedSummaryDay === 'All Days' ? 'All_Days' : selectedSummaryDay}.pdf`;
+          console.log('Saving PDF as:', fileName);
+          doc.save(fileName);
+          console.log('PDF export completed');
         } catch (e) {
-          console.error('exportToPDF error:', e);
-          setError('Failed to generate PDF. Please try again.');
+          console.error('exportToPDF error:', e.message, e.stack);
+          setError(`Failed to generate PDF: ${e.message}. Please try again.`);
         }
       };
 
@@ -1236,7 +1257,7 @@
       root.render(<App />);
     } catch (e) {
       console.error('Root render error:', e);
-      document.getElementById('root').innerHTML = '<div class="text-center text-red-600 p-4">Failed to load app. Please refresh and try again.</div>';
+      document.getElementById('root').innerHTML = '<div className="text-center text-red-600 p-4">Failed to load app. Please refresh and try again.</div>';
     }
   </script>
 </body>
