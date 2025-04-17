@@ -11,6 +11,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body class="bg-gray-100 font-sans">
   <div id="root" class="container mx-auto p-4"></div>
@@ -29,8 +30,7 @@
           var filteredData = jsonData.filter(row =>
             row.some(cell => cell !== '' && cell !== null && cell !== undefined)
           );
-          var csv = XLSX.utils.aoa_to_sheet(filteredData);
-          csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+          var csv = XLSX.utils.sheet_to_csv(XLSX.utils.aoa_to_sheet(filteredData), { header: 1 });
           return csv;
         }
         return gk_fileData[filename] || "";
@@ -155,6 +155,7 @@
       const [summaryDay, setSummaryDay] = useState(null);
       const [selectedSummaryDay, setSelectedSummaryDay] = useState('All Days');
       const [selectedRunningLinesDay, setSelectedRunningLinesDay] = useState('All Days');
+      const [selectedIssueType, setSelectedIssueType] = useState('All Issues');
 
       const textareaRefs = useRef(defaultHeadData.map(() => React.createRef()));
 
@@ -295,6 +296,7 @@
             setCurrentDay('2025-01-11');
             setSelectedSummaryDay('All Days');
             setSelectedRunningLinesDay('All Days');
+            setSelectedIssueType('All Issues');
             try {
               localStorage.removeItem('downtimeLoggerData');
               localStorage.removeItem('downtimeLoggerDates');
@@ -341,6 +343,169 @@
         }
       };
 
+      const exportToPDF = () => {
+        try {
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF();
+          const pageWidth = doc.internal.pageSize.getWidth();
+          let yOffset = 20;
+
+          doc.setFontSize(16);
+          doc.text('Ishida CCW Downtime Report', pageWidth / 2, yOffset, { align: 'center' });
+          yOffset += 10;
+          doc.setFontSize(12);
+          doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth / 2, yOffset, { align: 'center' });
+          yOffset += 10;
+
+          if (selectedSummaryDay !== 'All Days') {
+            const dayLabel = dates.find(d => d.date === selectedSummaryDay)?.label || selectedSummaryDay;
+            doc.text(`Day: ${dayLabel} (${selectedSummaryDay})`, 20, yOffset);
+            yOffset += 10;
+          } else {
+            doc.text('Day: All Days', 20, yOffset);
+            yOffset += 10;
+          }
+
+          doc.setFontSize(14);
+          doc.text('Overall Summary', 20, yOffset);
+          yOffset += 10;
+          doc.setFontSize(12);
+          doc.text(`Total Lines Running: ${totalLinesRunning}`, 20, yOffset);
+          yOffset += 5;
+          doc.text(`Total Heads Offline: ${totalHeadsDown}`, 20, yOffset);
+          yOffset += 10;
+
+          const headsDownData = headsDownSummary
+            .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
+            .map(entry => [
+              entry.line,
+              entry.section,
+              `${entry.dayLabel} (${entry.date})`,
+              entry.headsOffline.map(h => h.head).join(', '),
+              entry.headsOffline.map(h => h.issue).join(', '),
+              entry.headsOffline.map(h => h.repaired).join(', '),
+              entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')
+            ]);
+
+          doc.autoTable({
+            head: [['Line', 'Section', 'Day', 'Heads Offline', 'Issues', 'Repaired', 'Notes']],
+            body: headsDownData.length > 0 ? headsDownData : [['No heads down recorded']],
+            startY: yOffset,
+            styles: { fontSize: 10 },
+            columnStyles: { 6: { cellWidth: 40 } }
+          });
+          yOffset = doc.lastAutoTable.finalY + 10;
+
+          doc.setFontSize(14);
+          doc.text('Running Lines Summary', 20, yOffset);
+          yOffset += 10;
+          const runningLinesData = runningLinesSummary
+            .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
+            .map(entry => [
+              entry.line,
+              entry.section,
+              `${entry.dayLabel} (${entry.date})`,
+              entry.running
+            ]);
+
+          doc.autoTable({
+            head: [['Line', 'Section', 'Day', 'Running Status']],
+            body: runningLinesData.length > 0 ? runningLinesData : [['No lines running']],
+            startY: yOffset,
+            styles: { fontSize: 10 }
+          });
+
+          doc.save(`Downtime_Report_${selectedSummaryDay === 'All Days' ? 'All_Days' : selectedSummaryDay}.pdf`);
+        } catch (e) {
+          console.error('exportToPDF error:', e);
+          setError('Failed to generate PDF. Please try again.');
+        }
+      };
+
+      const handleFileImport = (event) => {
+        try {
+          const file = event.target.files[0];
+          if (!file) return;
+
+          const fileExtension = file.name.split('.').pop().toLowerCase();
+          if (!['csv', 'xlsx'].includes(fileExtension)) {
+            setError('Please upload a CSV or XLSX file.');
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              let parsedData;
+              if (fileExtension === 'csv') {
+                parsedData = Papa.parse(e.target.result, { header: true, skipEmptyLines: true });
+                if (parsedData.errors.length > 0) {
+                  setError('Error parsing CSV file.');
+                  return;
+                }
+                parsedData = parsedData.data;
+              } else {
+                const workbook = XLSX.read(e.target.result, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                parsedData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
+                parsedData = parsedData.slice(1).map(row => ({
+                  Line: row[0],
+                  Section: row[1],
+                  Date: row[2],
+                  Running: row[3],
+                  ...Object.fromEntries(
+                    Array(14).fill().flatMap((_, i) => [
+                      [`Head${i + 1}_Offline`, row[4 + i * 3]],
+                      [`Head${i + 1}_Issue`, row[5 + i * 3]],
+                      [`Head${i + 1}_Notes`, row[6 + i * 3] || '']
+                    ])
+                  )
+                }));
+              }
+
+              const newData = { ...initialData };
+              const validLines = lines.map(l => l.name);
+              const validDates = dates.map(d => d.date);
+
+              for (const row of parsedData) {
+                if (!validLines.includes(row.Line) || !validDates.includes(row.Date)) {
+                  setError(`Invalid line (${row.Line}) or date (${row.Date}) in file.`);
+                  return;
+                }
+                newData[row.Line][row.Date] = {
+                  heads: Array(14).fill().map((_, i) => ({
+                    head: i + 1,
+                    offline: row[`Head${i + 1}_Offline`] || 'Active',
+                    issue: row[`Head${i + 1}_Issue`] || 'None',
+                    repaired: row[`Head${i + 1}_Repaired`] || 'N/A',
+                    notes: row[`Head${i + 1}_Notes`] || ''
+                  }))
+                };
+                newData[row.Line].running[row.Date] = row.Running || 'No';
+              }
+
+              if (window.confirm('Importing will overwrite existing data. Proceed?')) {
+                setData(newData);
+                setError(null);
+                console.log('Imported data successfully');
+              }
+            } catch (err) {
+              console.error('File import parsing error:', err);
+              setError('Failed to parse file. Ensure correct format.');
+            }
+          };
+
+          if (fileExtension === 'csv') {
+            reader.readAsText(file);
+          } else {
+            reader.readAsArrayBuffer(file);
+          }
+        } catch (e) {
+          console.error('handleFileImport error:', e);
+          setError('Failed to import file. Please try again.');
+        }
+      };
+
       const totalHeadsDownPerDay = dates.map(day => {
         try {
           return {
@@ -369,6 +534,21 @@
           }
         })
         .filter(item => item.count > 0);
+
+      const issueTrends = dates.map(day => {
+        try {
+          const counts = issueTypes.reduce((acc, issue) => {
+            acc[issue] = Object.values(data)
+              .flatMap(line => (line[day.date]?.heads || defaultHeadData))
+              .filter(head => head.issue === issue).length;
+            return acc;
+          }, {});
+          return { day: day.label, date: day.date, ...counts };
+        } catch (e) {
+          console.error('issueTrends error:', e);
+          return { day: day.label, date: day.date, ...issueTypes.reduce((acc, issue) => ({ ...acc, [issue]: 0 }), {}) };
+        }
+      });
 
       const totalHeadsDown = (() => {
         try {
@@ -529,6 +709,48 @@
         );
       };
 
+      const DashboardPage = () => (
+        <div>
+          <h2 className="text-xl font-semibold mb-4">Line Status Dashboard</h2>
+          <div className="mb-4">
+            <label className="block text-lg font-semibold mb-2">Select Day:</label>
+            <select
+              className="w-full p-2 border rounded-md"
+              value={selectedSummaryDay}
+              onChange={(e) => {
+                console.log('Selected dashboard day:', e.target.value);
+                setSelectedSummaryDay(e.target.value);
+                setSelectedRunningLinesDay(e.target.value);
+              }}
+            >
+              <option value="All Days">All Days</option>
+              {dates.map(day => (
+                <option key={day.date} value={day.date}>
+                  {day.label} ({day.date})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {lines.map(line => {
+              const dayData = data[line.name][selectedSummaryDay === 'All Days' ? dates[0].date : selectedSummaryDay];
+              const offlineHeads = dayData?.heads?.filter(h => h.offline === 'Offline')?.length || 0;
+              const notes = dayData?.heads?.filter(h => h.notes).map(h => `Head ${h.head}: ${h.notes}`).join('; ') || 'None';
+              const runningStatus = data[line.name].running[selectedSummaryDay === 'All Days' ? dates[0].date : selectedSummaryDay] || 'No';
+              const bgColor = runningStatus === 'Yes' ? 'bg-green-100' : offlineHeads > 0 ? 'bg-red-100' : 'bg-gray-100';
+              return (
+                <div key={line.name} className={`p-4 rounded-lg shadow-md ${bgColor}`}>
+                  <h3 className="text-lg font-semibold">{line.name} ({line.section})</h3>
+                  <p><strong>Running:</strong> {runningStatus}</p>
+                  <p><strong>Offline Heads:</strong> {offlineHeads}</p>
+                  <p className="truncate" title={notes}><strong>Notes:</strong> {notes}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+
       const SummaryPage = () => (
         <div>
           <h2 className="text-xl font-semibold mb-4">Overall Summary</h2>
@@ -548,6 +770,7 @@
               onChange={(e) => {
                 console.log('Selected heads down summary day:', e.target.value);
                 setSelectedSummaryDay(e.target.value);
+                setSelectedRunningLinesDay(e.target.value);
               }}
             >
               <option value="All Days">All Days</option>
@@ -604,6 +827,7 @@
               onChange={(e) => {
                 console.log('Selected running lines summary day:', e.target.value);
                 setSelectedRunningLinesDay(e.target.value);
+                setSelectedSummaryDay(e.target.value);
               }}
             >
               <option value="All Days">All Days</option>
@@ -661,6 +885,49 @@
               </Recharts.BarChart>
             </Recharts.ResponsiveContainer>
           </div>
+
+          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 className="text-xl font-semibold mb-4">Issue Trends Over Time</h2>
+            <div className="mb-4">
+              <label className="block text-lg font-semibold mb-2">Select Issue Type:</label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={selectedIssueType}
+                onChange={(e) => {
+                  console.log('Selected issue type:', e.target.value);
+                  setSelectedIssueType(e.target.value);
+                }}
+              >
+                <option value="All Issues">All Issues</option>
+                {issueTypes.filter(issue => issue !== 'None').map(issue => (
+                  <option key={issue} value={issue}>{issue}</option>
+                ))}
+              </select>
+            </div>
+            <Recharts.ResponsiveContainer width="100%" height={300}>
+              <Recharts.LineChart data={issueTrends}>
+                <Recharts.CartesianGrid strokeDasharray="3 3" />
+                <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
+                <Recharts.YAxis
+                  label={{ value: 'Issue Count', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                  style={{ fontSize: 12 }}
+                />
+                <Recharts.Tooltip />
+                <Recharts.Legend />
+                {issueTypes
+                  .filter(issue => issue !== 'None' && (selectedIssueType === 'All Issues' || selectedIssueType === issue))
+                  .map((issue, index) => (
+                    <Recharts.Line
+                      key={issue}
+                      type="monotone"
+                      dataKey={issue}
+                      stroke={['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#f97316'][index % 7]}
+                      name={issue}
+                    />
+                  ))}
+              </Recharts.LineChart>
+            </Recharts.ResponsiveContainer>
+          </div>
         </div>
       );
 
@@ -695,6 +962,19 @@
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 className="text-xl font-semibold mb-4">Import Data</h2>
+            <input
+              type="file"
+              accept=".csv,.xlsx"
+              className="w-full p-2 border rounded-md"
+              onChange={handleFileImport}
+            />
+            <p className="text-sm text-gray-500 mt-2">
+              Upload a CSV/XLSX file with columns: Line, Section, Date, Running, Head1_Offline, Head1_Issue, Head1_Repaired, Head1_Notes, ..., Head14_Notes
+            </p>
           </div>
 
           <div className="mb-8">
@@ -887,6 +1167,12 @@
                 >
                   Export to CSV
                 </button>
+                <button
+                  className="bg-purple-500 text-white px-4 py-2 rounded-md hover:bg-purple-600"
+                  onClick={exportToPDF}
+                >
+                  Download PDF Report
+                </button>
               </div>
             </div>
             <p className="text-gray-600">
@@ -926,14 +1212,20 @@
                 Main Logger
               </button>
               <button
-                className={`px-4 py-2 rounded-md ${currentPage === 'summary' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                className={`px-4 py-2 mr-2 rounded-md ${currentPage === 'summary' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
                 onClick={() => setCurrentPage('summary')}
               >
                 Summary Page
               </button>
+              <button
+                className={`px-4 py-2 rounded-md ${currentPage === 'dashboard' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                onClick={() => setCurrentPage('dashboard')}
+              >
+                Dashboard
+              </button>
             </div>
 
-            {currentPage === 'main' ? <MainPage /> : <SummaryPage />}
+            {currentPage === 'main' ? <MainPage /> : currentPage === 'dashboard' ? <DashboardPage /> : <SummaryPage />}
           </div>
         </ErrorBoundary>
       );
