@@ -11,11 +11,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
-  <!-- Local fallbacks if CDNs fail (uncomment and host locally if needed) -->
-  <!--
-  <script>window.React || document.write('<script src="./react.production.min.js"><\/script>')</script>
-  <script>window.ReactDOM || document.write('<script src="./react-dom.production.min.js"><\/script>')</script>
-  -->
 </head>
 <body class="bg-gray-100 font-sans">
   <div id="root" class="container mx-auto p-4"></div>
@@ -158,6 +153,8 @@
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [summaryDay, setSummaryDay] = useState(null);
+      const [selectedSummaryDay, setSelectedSummaryDay] = useState('All Days');
+      const [selectedRunningLinesDay, setSelectedRunningLinesDay] = useState('All Days');
 
       const textareaRefs = useRef(defaultHeadData.map(() => React.createRef()));
 
@@ -296,6 +293,8 @@
             setDates(initialDates);
             setCurrentLine('Line 1');
             setCurrentDay('2025-01-11');
+            setSelectedSummaryDay('All Days');
+            setSelectedRunningLinesDay('All Days');
             try {
               localStorage.removeItem('downtimeLoggerData');
               localStorage.removeItem('downtimeLoggerDates');
@@ -443,6 +442,21 @@
         })
       ).filter(item => item && item.running === 'Yes');
 
+      const runningLinesPerDay = dates.map(day => {
+        try {
+          const count = runningLinesSummary.filter(entry => entry.date === day.date).length;
+          console.log(`Running lines for ${day.label}: ${count}`);
+          return {
+            day: day.label,
+            date: day.date,
+            lines: count
+          };
+        } catch (e) {
+          console.error('runningLinesPerDay error:', e);
+          return { day: day.label, date: day.date, lines: 0 };
+        }
+      });
+
       const getDaySummary = (dayLabel) => {
         try {
           const dayDate = dates.find(d => d.label === dayLabel)?.date;
@@ -526,8 +540,26 @@
           </div>
 
           <h2 className="text-xl font-semibold mb-4">Heads Down Summary</h2>
-          {headsDownSummary.length === 0 ? (
-            <p className="text-gray-600">No heads down recorded.</p>
+          <div className="mb-4">
+            <label className="block text-lg font-semibold mb-2">Select Day:</label>
+            <select
+              className="w-full p-2 border rounded-md"
+              value={selectedSummaryDay}
+              onChange={(e) => {
+                console.log('Selected heads down summary day:', e.target.value);
+                setSelectedSummaryDay(e.target.value);
+              }}
+            >
+              <option value="All Days">All Days</option>
+              {dates.map(day => (
+                <option key={day.date} value={day.date}>
+                  {day.label} ({day.date})
+                </option>
+              ))}
+            </select>
+          </div>
+          {headsDownSummary.filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay).length === 0 ? (
+            <p className="text-gray-600">No heads down recorded for {selectedSummaryDay === 'All Days' ? 'any day' : dates.find(d => d.date === selectedSummaryDay)?.label}.</p>
           ) : (
             <div className="overflow-x-auto mb-8">
               <table className="min-w-full bg-white shadow-md rounded-lg">
@@ -543,29 +575,49 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {headsDownSummary.map((entry, index) => (
-                    <tr key={index} className="border-t">
-                      <td className="px-4 py-2">{entry.line}</td>
-                      <td className="px-4 py-2">{entry.section}</td>
-                      <td className="px-4 py-2">{entry.dayLabel} ({entry.date})</td>
-                      <td className="px-4 py-2">{entry.headsOffline.map(h => h.head).join(', ')}</td>
-                      <td className="px-4 py-2">{entry.headsOffline.map(h => h.issue).join(', ')}</td>
-                      <td className="px-4 py-2">{entry.headsOffline.map(h => h.repaired).join(', ')}</td>
-                      <td className="px-4 py-2 max-w-xs truncate" title={entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')}>
-                        {entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')}
-                      </td>
-                    </tr>
-                  ))}
+                  {headsDownSummary
+                    .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
+                    .map((entry, index) => (
+                      <tr key={index} className="border-t">
+                        <td className="px-4 py-2">{entry.line}</td>
+                        <td className="px-4 py-2">{entry.section}</td>
+                        <td className="px-4 py-2">{entry.dayLabel} ({entry.date})</td>
+                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.head).join(', ')}</td>
+                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.issue).join(', ')}</td>
+                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.repaired).join(', ')}</td>
+                        <td className="px-4 py-2 max-w-xs truncate" title={entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')}>
+                          {entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')}
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
           )}
 
           <h2 className="text-xl font-semibold mb-4">Running Lines Summary</h2>
-          {runningLinesSummary.length === 0 ? (
-            <p className="text-gray-600">No lines marked as running.</p>
+          <div className="mb-4">
+            <label className="block text-lg font-semibold mb-2">Select Day:</label>
+            <select
+              className="w-full p-2 border rounded-md"
+              value={selectedRunningLinesDay}
+              onChange={(e) => {
+                console.log('Selected running lines summary day:', e.target.value);
+                setSelectedRunningLinesDay(e.target.value);
+              }}
+            >
+              <option value="All Days">All Days</option>
+              {dates.map(day => (
+                <option key={day.date} value={day.date}>
+                  {day.label} ({day.date})
+                </option>
+              ))}
+            </select>
+          </div>
+          {runningLinesSummary.filter(entry => selectedRunningLinesDay === 'All Days' || entry.date === selectedRunningLinesDay).length === 0 ? (
+            <p className="text-gray-600">No lines marked as running for {selectedRunningLinesDay === 'All Days' ? 'any day' : dates.find(d => d.date === selectedRunningLinesDay)?.label}.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto mb-8">
               <table className="min-w-full bg-white shadow-md rounded-lg">
                 <thead>
                   <tr className="bg-gray-200">
@@ -576,18 +628,39 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {runningLinesSummary.map((entry, index) => (
-                    <tr key={index} className="border-t">
-                      <td className="px-4 py-2">{entry.line}</td>
-                      <td className="px-4 py-2">{entry.section}</td>
-                      <td className="px-4 py-2">{entry.dayLabel} ({entry.date})</td>
-                      <td className="px-4 py-2">{entry.running}</td>
-                    </tr>
-                  ))}
+                  {runningLinesSummary
+                    .filter(entry => selectedRunningLinesDay === 'All Days' || entry.date === selectedRunningLinesDay)
+                    .map((entry, index) => (
+                      <tr key={index} className="border-t">
+                        <td className="px-4 py-2">{entry.line}</td>
+                        <td className="px-4 py-2">{entry.section}</td>
+                        <td className="px-4 py-2">{entry.dayLabel} ({entry.date})</td>
+                        <td className="px-4 py-2">{entry.running}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
           )}
+
+          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 className="text-xl font-semibold mb-4">Running Lines Per Day</h2>
+            <Recharts.ResponsiveContainer width="100%" height={300}>
+              <Recharts.BarChart 
+                data={runningLinesPerDay.filter(day => selectedRunningLinesDay === 'All Days' || day.date === selectedRunningLinesDay)}
+              >
+                <Recharts.CartesianGrid strokeDasharray="3 3" />
+                <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
+                <Recharts.YAxis
+                  label={{ value: 'Lines Running', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                  style={{ fontSize: 12 }}
+                />
+                <Recharts.Tooltip />
+                <Recharts.Legend />
+                <Recharts.Bar dataKey="lines" fill="#3b82f6" />
+              </Recharts.BarChart>
+            </Recharts.ResponsiveContainer>
+          </div>
         </div>
       );
 
