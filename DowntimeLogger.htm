@@ -11,6 +11,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
+  <!-- Local fallbacks if CDNs fail (uncomment and host locally if needed) -->
+  <!--
+  <script>window.React || document.write('<script src="./react.production.min.js"><\/script>')</script>
+  <script>window.ReactDOM || document.write('<script src="./react-dom.production.min.js"><\/script>')</script>
+  -->
 </head>
 <body class="bg-gray-100 font-sans">
   <div id="root" class="container mx-auto p-4"></div>
@@ -20,8 +25,8 @@
     var gk_xlsxFileLookup = {};
     var gk_fileData = {};
     function loadFileData(filename) {
-      if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-        try {
+      try {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
           var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
           var firstSheetName = workbook.SheetNames[0];
           var worksheet = workbook.Sheets[firstSheetName];
@@ -32,17 +37,17 @@
           var csv = XLSX.utils.aoa_to_sheet(filteredData);
           csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
           return csv;
-        } catch (e) {
-          console.error(e);
-          return "";
         }
+        return gk_fileData[filename] || "";
+      } catch (e) {
+        console.error('loadFileData error:', e);
+        return "";
       }
-      return gk_fileData[filename] || "";
     }
   </script>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     class ErrorBoundary extends React.Component {
       state = { hasError: false, error: null };
@@ -98,16 +103,17 @@
       head: i + 1,
       offline: 'Active',
       issue: 'None',
-      repaired: 'N/A'
+      repaired: 'N/A',
+      notes: ''
     }));
 
     const initialData = lines.reduce((acc, line) => {
       acc[line.name] = {
-        '2025-01-11': { heads: [...defaultHeadData], notes: '' },
-        '2025-01-15': { heads: [...defaultHeadData], notes: '' },
-        '2025-01-17': { heads: [...defaultHeadData], notes: '' },
-        '2025-02-05': { heads: [...defaultHeadData], notes: '' },
-        '2025-02-07': { heads: [...defaultHeadData], notes: '' },
+        '2025-01-11': { heads: [...defaultHeadData] },
+        '2025-01-15': { heads: [...defaultHeadData] },
+        '2025-01-17': { heads: [...defaultHeadData] },
+        '2025-02-05': { heads: [...defaultHeadData] },
+        '2025-02-07': { heads: [...defaultHeadData] },
         running: {
           '2025-01-11': 'No',
           '2025-01-15': 'No',
@@ -129,12 +135,22 @@
 
     const App = () => {
       const [data, setData] = useState(() => {
-        const savedData = localStorage.getItem('downtimeLoggerData');
-        return savedData ? JSON.parse(savedData) : initialData;
+        try {
+          const savedData = localStorage.getItem('downtimeLoggerData');
+          return savedData ? JSON.parse(savedData) : initialData;
+        } catch (e) {
+          console.error('Error loading data from localStorage:', e);
+          return initialData;
+        }
       });
       const [dates, setDates] = useState(() => {
-        const savedDates = localStorage.getItem('downtimeLoggerDates');
-        return savedDates ? JSON.parse(savedDates) : initialDates;
+        try {
+          const savedDates = localStorage.getItem('downtimeLoggerDates');
+          return savedDates ? JSON.parse(savedDates) : initialDates;
+        } catch (e) {
+          console.error('Error loading dates from localStorage:', e);
+          return initialDates;
+        }
       });
       const [currentLine, setCurrentLine] = useState('Line 1');
       const [currentDay, setCurrentDay] = useState('2025-01-11');
@@ -142,6 +158,8 @@
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [summaryDay, setSummaryDay] = useState(null);
+
+      const textareaRefs = useRef(defaultHeadData.map(() => React.createRef()));
 
       useEffect(() => {
         try {
@@ -177,205 +195,275 @@
       ];
 
       const handleDateChange = (dayId, newDate) => {
-        if (!newDate || newDate === '') {
-          setError('Please select a valid date.');
-          return;
-        }
+        try {
+          if (!newDate || newDate === '') {
+            setError('Please select a valid date.');
+            return;
+          }
 
-        if (dates.some(d => d.date === newDate && d.id !== dayId)) {
-          setError('This date is already used for another day.');
-          return;
-        }
+          if (dates.some(d => d.date === newDate && d.id !== dayId)) {
+            setError('This date is already used for another day.');
+            return;
+          }
 
-        setError(null);
+          setError(null);
 
-        const oldDate = dates.find(d => d.id === dayId)?.date;
-        if (!oldDate || oldDate === newDate) return;
+          const oldDate = dates.find(d => d.id === dayId)?.date;
+          if (!oldDate || oldDate === newDate) return;
 
-        setDates(prev => prev.map(d => d.id === dayId ? { ...d, date: newDate } : d));
+          setDates(prev => prev.map(d => d.id === dayId ? { ...d, date: newDate } : d));
 
-        setData(prev => {
-          const newData = {};
-          Object.keys(prev).forEach(line => {
-            newData[line] = { running: {} };
-            Object.keys(prev[line].running).forEach(date => {
-              newData[line].running[date === oldDate ? newDate : date] = prev[line].running[date];
+          setData(prev => {
+            const newData = {};
+            Object.keys(prev).forEach(line => {
+              newData[line] = { running: {} };
+              Object.keys(prev[line].running).forEach(date => {
+                newData[line].running[date === oldDate ? newDate : date] = prev[line].running[date];
+              });
+              Object.keys(prev[line]).forEach(date => {
+                if (date !== 'running') {
+                  newData[line][date === oldDate ? newDate : date] = prev[line][date];
+                }
+              });
             });
-            Object.keys(prev[line]).forEach(date => {
-              if (date !== 'running') {
-                newData[line][date === oldDate ? newDate : date] = prev[line][date];
-              }
-            });
+            return newData;
           });
-          return newData;
-        });
 
-        if (currentDay === oldDate) {
-          setCurrentDay(newDate);
+          if (currentDay === oldDate) {
+            setCurrentDay(newDate);
+          }
+        } catch (e) {
+          console.error('handleDateChange error:', e);
+          setError('Failed to update date. Please try again.');
         }
       };
 
       const handleDropdownChange = (headIndex, field, value) => {
-        setData(prev => {
-          const newData = { ...prev };
-          const lineData = { ...newData[currentLine] };
-          const dayData = { ...lineData[currentDay], heads: [...(lineData[currentDay]?.heads || defaultHeadData)] };
-          const headData = { ...dayData.heads[headIndex] };
+        console.log(`handleDropdownChange: headIndex=${headIndex}, field=${field}, value=${value}`);
+        try {
+          setData(prev => {
+            const newData = { ...prev };
+            const lineData = { ...newData[currentLine] };
+            const dayData = { ...lineData[currentDay], heads: [...(lineData[currentDay]?.heads || defaultHeadData)] };
+            const headData = { ...dayData.heads[headIndex] };
 
-          headData[field] = value;
+            if (field === 'notes') {
+              headData.notes = value.trim();
+            } else {
+              headData[field] = value;
+              if (field === 'offline') {
+                headData.issue = value === 'Active' ? 'None' : headData.issue;
+                headData.repaired = value === 'Active' ? 'N/A' : headData.repaired;
+                headData.notes = value === 'Active' ? '' : headData.notes;
+              }
+              if (field === 'issue') {
+                headData.repaired = value === 'None' ? 'N/A' : headData.repaired;
+                headData.notes = value === 'None' ? '' : headData.notes;
+              }
+            }
 
-          if (field === 'offline') {
-            headData.issue = value === 'Active' ? 'None' : headData.issue;
-            headData.repaired = value === 'Active' ? 'N/A' : headData.repaired;
-          }
-          if (field === 'issue') {
-            headData.repaired = value === 'None' ? 'N/A' : headData.repaired;
-          }
-
-          dayData.heads[headIndex] = headData;
-          lineData[currentDay] = dayData;
-          newData[currentLine] = lineData;
-          return newData;
-        });
+            dayData.heads[headIndex] = headData;
+            lineData[currentDay] = dayData;
+            newData[currentLine] = lineData;
+            console.log('State updated for', currentLine, currentDay, headIndex);
+            return newData;
+          });
+        } catch (e) {
+          console.error('handleDropdownChange error:', e);
+          setError('Failed to update data. Please try again.');
+        }
       };
 
       const handleRunningChange = (value) => {
-        setData(prev => {
-          const newData = { ...prev };
-          const lineData = { ...newData[currentLine] };
-          lineData.running = { ...lineData.running, [currentDay]: value };
-          newData[currentLine] = lineData;
-          return newData;
-        });
-      };
-
-      const handleNotesChange = (value) => {
-        setData(prev => {
-          const newData = { ...prev };
-          const lineData = { ...newData[currentLine] };
-          const dayData = { ...lineData[currentDay], heads: [...(lineData[currentDay]?.heads || defaultHeadData)] };
-          dayData.notes = value;
-          lineData[currentDay] = dayData;
-          newData[currentLine] = lineData;
-          return newData;
-        });
+        try {
+          setData(prev => {
+            const newData = { ...prev };
+            const lineData = { ...newData[currentLine] };
+            lineData.running = { ...lineData.running, [currentDay]: value };
+            newData[currentLine] = lineData;
+            return newData;
+          });
+        } catch (e) {
+          console.error('handleRunningChange error:', e);
+          setError('Failed to update running status. Please try again.');
+        }
       };
 
       const handleReset = () => {
-        if (window.confirm('Are you sure you want to reset all data to defaults? This will clear all changes.')) {
-          setData(initialData);
-          setDates(initialDates);
-          setCurrentLine('Line 1');
-          setCurrentDay('2025-01-11');
-          try {
-            localStorage.removeItem('downtimeLoggerData');
-            localStorage.removeItem('downtimeLoggerDates');
-          } catch (e) {
-            console.error('Failed to clear localStorage:', e);
+        try {
+          if (window.confirm('Are you sure you want to reset all data to defaults? This will clear all changes.')) {
+            setData(initialData);
+            setDates(initialDates);
+            setCurrentLine('Line 1');
+            setCurrentDay('2025-01-11');
+            try {
+              localStorage.removeItem('downtimeLoggerData');
+              localStorage.removeItem('downtimeLoggerDates');
+            } catch (e) {
+              console.error('Failed to clear localStorage:', e);
+            }
           }
+        } catch (e) {
+          console.error('handleReset error:', e);
+          setError('Failed to reset data. Please try again.');
         }
       };
 
       const exportToCSV = () => {
-        const csvData = [];
-        lines.forEach(line => {
-          dates.forEach(day => {
-            const row = {
-              Line: line.name,
-              Section: line.section,
-              Date: day.date,
-              Running: data[line.name].running[day.date] || 'No',
-              Notes: data[line.name][day.date]?.notes || ''
-            };
-            (data[line.name][day.date]?.heads || defaultHeadData).forEach(head => {
-              row[`Head${head.head}_Offline`] = head.offline;
-              row[`Head${head.head}_Issue`] = head.issue;
-              row[`Head${head.head}_Repaired`] = head.repaired;
+        try {
+          const csvData = [];
+          lines.forEach(line => {
+            dates.forEach(day => {
+              const row = {
+                Line: line.name,
+                Section: line.section,
+                Date: day.date,
+                Running: data[line.name].running[day.date] || 'No'
+              };
+              (data[line.name][day.date]?.heads || defaultHeadData).forEach(head => {
+                row[`Head${head.head}_Offline`] = head.offline;
+                row[`Head${head.head}_Issue`] = head.issue;
+                row[`Head${head.head}_Repaired`] = head.repaired;
+                row[`Head${head.head}_Notes`] = head.notes || '';
+              });
+              csvData.push(row);
             });
-            csvData.push(row);
           });
-        });
 
-        const csv = Papa.unparse(csvData);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'Downtime_Log.csv';
-        link.click();
+          const csv = Papa.unparse(csvData);
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = 'Downtime_Log.csv';
+          link.click();
+        } catch (e) {
+          console.error('exportToCSV error:', e);
+          setError('Failed to export CSV. Please try again.');
+        }
       };
 
-      const totalHeadsDownPerDay = dates.map(day => ({
-        day: day.label,
-        date: day.date,
-        heads: (data[currentLine][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length
-      }));
+      const totalHeadsDownPerDay = dates.map(day => {
+        try {
+          return {
+            day: day.label,
+            date: day.date,
+            heads: (data[currentLine][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length
+          };
+        } catch (e) {
+          console.error('totalHeadsDownPerDay error:', e);
+          return { day: day.label, date: day.date, heads: 0 };
+        }
+      });
 
       const issueCounts = issueTypes
-        .map(issue => ({
-          issue,
-          count: Object.values(data)
-            .flatMap(line => Object.values(line).filter(v => v.heads).flatMap(v => v.heads))
-            .filter(head => head.issue === issue).length
-        }))
+        .map(issue => {
+          try {
+            return {
+              issue,
+              count: Object.values(data)
+                .flatMap(line => Object.values(line).filter(v => v.heads).flatMap(v => v.heads))
+                .filter(head => head.issue === issue).length
+            };
+          } catch (e) {
+            console.error('issueCounts error:', e);
+            return { issue, count: 0 };
+          }
+        })
         .filter(item => item.count > 0);
 
-      const totalHeadsDown = Object.values(data)
-        .flatMap(line => Object.values(line).filter(v => v.heads).flatMap(v => v.heads))
-        .filter(head => head.offline === 'Offline').length;
+      const totalHeadsDown = (() => {
+        try {
+          return Object.values(data)
+            .flatMap(line => Object.values(line).filter(v => v.heads).flatMap(v => v.heads))
+            .filter(head => head.offline === 'Offline').length;
+        } catch (e) {
+          console.error('totalHeadsDown error:', e);
+          return 0;
+        }
+      })();
 
-      const totalLinesRunning = lines.reduce((count, line) =>
-        count + dates.reduce((dayCount, day) =>
-          dayCount + (data[line.name].running[day.date] === 'Yes' ? 1 : 0), 0), 0);
+      const totalLinesRunning = lines.reduce((count, line) => {
+        try {
+          return count + dates.reduce((dayCount, day) =>
+            dayCount + (data[line.name].running[day.date] === 'Yes' ? 1 : 0), 0);
+        } catch (e) {
+          console.error('totalLinesRunning error:', e);
+          return count;
+        }
+      }, 0);
 
-      const activeLines = lines.filter(line =>
-        Object.values(data[line.name]).some(day => day.heads && day.heads.some(head => head.offline === 'Offline'))
-      ).map(line => line.name);
+      const activeLines = lines.filter(line => {
+        try {
+          return Object.values(data[line.name]).some(day => day.heads && day.heads.some(head => head.offline === 'Offline'));
+        } catch (e) {
+          console.error('activeLines error:', e);
+          return false;
+        }
+      }).map(line => line.name);
 
       const headsDownSummary = lines.flatMap(line =>
         dates.map(day => {
-          const headsOffline = (data[line.name][day.date]?.heads || defaultHeadData)
-            .filter(head => head.offline === 'Offline')
-            .map(head => ({
-              head: head.head,
-              issue: head.issue,
-              repaired: head.repaired
-            }));
-          return headsOffline.length > 0 ? {
-            line: line.name,
-            section: line.section,
-            date: day.date,
-            dayLabel: day.label,
-            headsOffline,
-            notes: data[line.name][day.date]?.notes || ''
-          } : null;
+          try {
+            const headsOffline = (data[line.name][day.date]?.heads || defaultHeadData)
+              .filter(head => head.offline === 'Offline')
+              .map(head => ({
+                head: head.head,
+                issue: head.issue,
+                repaired: head.repaired,
+                notes: head.notes
+              }));
+            return headsOffline.length > 0 ? {
+              line: line.name,
+              section: line.section,
+              date: day.date,
+              dayLabel: day.label,
+              headsOffline
+            } : null;
+          } catch (e) {
+            console.error('headsDownSummary error:', e);
+            return null;
+          }
         })
       ).filter(item => item);
 
       const runningLinesSummary = lines.flatMap(line =>
-        dates.map(day => ({
-          line: line.name,
-          section: line.section,
-          date: day.date,
-          dayLabel: day.label,
-          running: data[line.name].running[day.date] || 'No'
-        }))
-      ).filter(item => item.running === 'Yes');
-
-      const getDaySummary = (dayLabel) => {
-        const dayDate = dates.find(d => d.label === dayLabel)?.date;
-        if (!dayDate) return [];
-        return lines.flatMap(line => {
-          const headsOffline = (data[line.name][dayDate]?.heads || defaultHeadData)
-            .filter(head => head.offline === 'Offline')
-            .map(head => ({
+        dates.map(day => {
+          try {
+            return {
               line: line.name,
               section: line.section,
-              head: head.head,
-              issue: head.issue,
-              repaired: head.repaired
-            }));
-          return headsOffline;
-        });
+              date: day.date,
+              dayLabel: day.label,
+              running: data[line.name].running[day.date] || 'No'
+            };
+          } catch (e) {
+            console.error('runningLinesSummary error:', e);
+            return null;
+          }
+        })
+      ).filter(item => item && item.running === 'Yes');
+
+      const getDaySummary = (dayLabel) => {
+        try {
+          const dayDate = dates.find(d => d.label === dayLabel)?.date;
+          if (!dayDate) return [];
+          return lines.flatMap(line => {
+            const headsOffline = (data[line.name][dayDate]?.heads || defaultHeadData)
+              .filter(head => head.offline === 'Offline')
+              .map(head => ({
+                line: line.name,
+                section: line.section,
+                head: head.head,
+                issue: head.issue,
+                repaired: head.repaired,
+                notes: head.notes
+              }));
+            return headsOffline;
+          });
+        } catch (e) {
+          console.error('getDaySummary error:', e);
+          return [];
+        }
       };
 
       const DaySummaryModal = ({ dayLabel }) => {
@@ -396,6 +484,7 @@
                         <th className="px-4 py-2 text-left">Head</th>
                         <th className="px-4 py-2 text-left">Issue</th>
                         <th className="px-4 py-2 text-left">Repaired</th>
+                        <th className="px-4 py-2 text-left">Notes</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -406,6 +495,9 @@
                           <td className="px-4 py-2">{entry.head}</td>
                           <td className="px-4 py-2">{entry.issue}</td>
                           <td className="px-4 py-2">{entry.repaired}</td>
+                          <td className="px-4 py-2 max-w-xs truncate" title={entry.notes || 'None'}>
+                            {entry.notes || 'None'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -459,7 +551,9 @@
                       <td className="px-4 py-2">{entry.headsOffline.map(h => h.head).join(', ')}</td>
                       <td className="px-4 py-2">{entry.headsOffline.map(h => h.issue).join(', ')}</td>
                       <td className="px-4 py-2">{entry.headsOffline.map(h => h.repaired).join(', ')}</td>
-                      <td className="px-4 py-2">{entry.notes || 'None'}</td>
+                      <td className="px-4 py-2 max-w-xs truncate" title={entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')}>
+                        {entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ')}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -585,11 +679,12 @@
                     <th className="px-4 py-2 text-left">Offline Status</th>
                     <th className="px-4 py-2 text-left">Issue Type</th>
                     <th className="px-4 py-2 text-left">Repaired</th>
+                    <th className="px-4 py-2 text-left">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data[currentLine][currentDay]?.heads || defaultHeadData).map((head, index) => (
-                    <tr key={head.head} className="border-t">
+                    <tr key={`head-${head.head}-${currentLine}-${currentDay}`} className="border-t">
                       <td className="px-4 py-2">{head.head}</td>
                       <td className="px-4 py-2">
                         <select
@@ -625,22 +720,37 @@
                           <option value="Not Fixed">Not Fixed</option>
                         </select>
                       </td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="text"
+                          className="w-full p-1 border rounded-md"
+                          defaultValue={head.notes || ''}
+                          ref={textareaRefs.current[index]}
+                          maxLength="200"
+                          placeholder="Notes (max 200 chars)"
+                          disabled={head.offline !== 'Offline'}
+                          onBlur={(e) => {
+                            console.log(`Notes blur: head=${head.head}, value=${e.target.value}`);
+                            handleDropdownChange(index, 'notes', e.target.value);
+                          }}
+                          onTouchStart={(e) => {
+                            console.log(`Notes touch: head=${head.head}`);
+                            e.target.focus();
+                          }}
+                          onClick={(e) => {
+                            console.log(`Notes click: head=${head.head}`);
+                            e.target.focus();
+                          }}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          {(head.notes || '').length}/200
+                        </p>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-semibold mb-4">Notes for {currentLine} ({currentDay})</h2>
-            <textarea
-              className="w-full p-2 border rounded-md"
-              rows="4"
-              value={data[currentLine][currentDay]?.notes || ''}
-              onChange={(e) => handleNotesChange(e.target.value)}
-              placeholder="Enter notes for this line and day..."
-            />
           </div>
 
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
@@ -756,8 +866,13 @@
       );
     };
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    try {
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    } catch (e) {
+      console.error('Root render error:', e);
+      document.getElementById('root').innerHTML = '<div class="text-center text-red-600 p-4">Failed to load app. Please refresh and try again.</div>';
+    }
   </script>
 </body>
 </html>
