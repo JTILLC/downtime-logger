@@ -520,17 +520,32 @@
       };
 
       const handleReset = () => {
-        console.log('Resetting to defaults');
+        console.log('Attempting to reset to defaults');
         try {
-          setData(JSON.parse(JSON.stringify(initialData)));
-          setDates([...initialDates]);
-          setHistoryLog([]);
-          setCurrentLine('Line 1');
-          setCurrentDay('2025-04-13');
-          setError(null);
+          if (!window.confirm) {
+            console.warn('window.confirm not available, falling back to alert');
+            alert('Reset not supported in this environment. Please confirm manually.');
+            return;
+          }
+          const confirmed = window.confirm('Are you sure you want to reset all data? This action cannot be undone.');
+          console.log('Reset confirmation result:', confirmed);
+          if (confirmed) {
+            if (!initialData || !initialDates) {
+              throw new Error('Initial data or dates not defined');
+            }
+            setData(JSON.parse(JSON.stringify(initialData)));
+            setDates([...initialDates]);
+            setHistoryLog([]);
+            setCurrentLine('Line 1');
+            setCurrentDay('2025-04-13');
+            setError(null);
+            console.log('Reset to defaults completed');
+          } else {
+            console.log('Reset canceled by user');
+          }
         } catch (e) {
           console.error('handleReset error:', e);
-          setError('Failed to reset data. Please try again.');
+          setError('Failed to reset data: ' + e.message);
         }
       };
 
