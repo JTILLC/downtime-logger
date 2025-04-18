@@ -177,6 +177,7 @@
       const [selectedIssueType, setSelectedIssueType] = useState('All Issues');
       const [selectedHistoryLine, setSelectedHistoryLine] = useState('All Lines');
       const [selectedHistoryHead, setSelectedHistoryHead] = useState('All Heads');
+      const [selectedDashboardDay, setSelectedDashboardDay] = useState('All Days');
 
       const textareaRefs = useRef(defaultHeadData.map(() => React.createRef()));
       const pendingHistoryUpdates = useRef({});
@@ -394,6 +395,60 @@
 
       const deleteHistoryItem = (id) => {
         setHistoryLog(prev => prev.filter(entry => entry.id !== id));
+      };
+
+      const handleClearHistory = () => {
+        try {
+          if (window.confirm('Are you sure you want to clear all history entries? This action cannot be undone.')) {
+            setHistoryLog([]);
+            setError(null);
+          }
+        } catch (e) {
+          console.error('handleClearHistory error:', e);
+          setError('Failed to clear history. Please try again.');
+        }
+      };
+
+      const handleExportHistoryToCSV = () => {
+        try {
+          const filteredHistoryLog = historyLog.filter(entry => {
+            const matchesLine = selectedHistoryLine === 'All Lines' || entry.line === selectedHistoryLine;
+            const matchesHead = selectedHistoryHead === 'All Heads' || entry.head.toString() === selectedHistoryHead;
+            return matchesLine && matchesHead;
+          });
+
+          if (filteredHistoryLog.length === 0) {
+            setError('No history entries to export.');
+            return;
+          }
+
+          const csvData = [
+            ['Timestamp', 'Line', 'Date', 'Head', 'Offline Status', 'Issue', 'Repaired', 'Notes', 'Change'],
+            ...filteredHistoryLog.map(entry => [
+              new Date(entry.timestamp).toLocaleString(),
+              entry.line,
+              entry.date,
+              entry.head,
+              entry.offline,
+              entry.issue,
+              entry.repaired,
+              entry.notes || 'N/A',
+              entry.change
+            ])
+          ];
+
+          const csv = Papa.unparse(csvData);
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = 'history_log.csv';
+          link.click();
+          URL.revokeObjectURL(link.href);
+          setError(null);
+        } catch (e) {
+          console.error('handleExportHistoryToCSV error:', e);
+          setError('Failed to export history to CSV. Please try again.');
+        }
       };
 
       const handleDropdownChange = (headIndex, field, value) => {
@@ -669,51 +724,95 @@
         );
       };
 
-      const DashboardPage = () => (
-        <div>
-          <h2 className="text-2xl font-semibold mb-6">Dashboard</h2>
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h3 className="text-xl font-semibold mb-4">Total Heads Down Per Day (All Lines)</h3>
-            <Recharts.ResponsiveContainer width="100%" height={300}>
-              <Recharts.BarChart data={totalHeadsDownPerDay}>
-                <Recharts.CartesianGrid strokeDasharray="3 3" />
-                <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
-                <Recharts.YAxis
-                  label={{ value: 'Heads Down', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                  style={{ fontSize: 12 }}
-                />
-                <Recharts.Tooltip />
-                <Recharts.Legend />
-                <Recharts.Bar dataKey="heads" fill="#3b82f6" />
-              </Recharts.BarChart>
-            </Recharts.ResponsiveContainer>
+      const DashboardPage = () => {
+        const isLineRunning = (line, day) => {
+          if (selectedDashboardDay === 'All Days') {
+            return dates.some(d => data[line.name].running[d.date] === 'Yes');
+          }
+          return data[line.name].running[day] === 'Yes';
+        };
+
+        return (
+          <div>
+            <h2 className="text-2xl font-semibold mb-6">Dashboard</h2>
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold">Running Lines Status</h3>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Select Day</label>
+                  <select
+                    className="w-full p-2 border rounded-md"
+                    value={selectedDashboardDay}
+                    onChange={(e) => setSelectedDashboardDay(e.target.value)}
+                  >
+                    <option value="All Days">All Days</option>
+                    {dates.map(day => (
+                      <option key={day.date} value={day.date}>
+                        {day.label} ({day.date})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {lines.map(line => (
+                  <div
+                    key={line.name}
+                    className={`p-4 rounded-md ${
+                      isLineRunning(line, selectedDashboardDay)
+                        ? 'bg-green-500 text-white'
+                        : 'bg-gray-200 text-black'
+                    }`}
+                  >
+                    <p className="font-semibold">{line.section}: {line.name}</p>
+                    <p>Status: {isLineRunning(line, selectedDashboardDay) ? 'Running' : 'Not Running'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <h3 className="text-xl font-semibold mb-4">Total Heads Down Per Day (All Lines)</h3>
+              <Recharts.ResponsiveContainer width="100%" height={300}>
+                <Recharts.BarChart data={totalHeadsDownPerDay}>
+                  <Recharts.CartesianGrid strokeDasharray="3 3" />
+                  <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
+                  <Recharts.YAxis
+                    label={{ value: 'Heads Down', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                    style={{ fontSize: 12 }}
+                  />
+                  <Recharts.Tooltip />
+                  <Recharts.Legend />
+                  <Recharts.Bar dataKey="heads" fill="#3b82f6" />
+                </Recharts.BarChart>
+              </Recharts.ResponsiveContainer>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <h3 className="text-xl font-semibold mb-4">Issue Distribution (All Lines)</h3>
+              <Recharts.ResponsiveContainer width="100%" height={300}>
+                <Recharts.PieChart>
+                  <Recharts.Pie
+                    data={issueCounts}
+                    dataKey="count"
+                    nameKey="issue"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    fill="#10b981"
+                    label
+                    style={{ fontSize: 12 }}
+                  >
+                    {issueCounts.map((entry, index) => (
+                      <Recharts.Cell key={`cell-${index}`} fill={['#10b981', '#ef4444', '#f59e0b'][index % 3]} />
+                    ))}
+                  </Recharts.Pie>
+                  <Recharts.Tooltip />
+                  <Recharts.Legend />
+                </Recharts.PieChart>
+              </Recharts.ResponsiveContainer>
+            </div>
           </div>
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h3 className="text-xl font-semibold mb-4">Issue Distribution (All Lines)</h3>
-            <Recharts.ResponsiveContainer width="100%" height={300}>
-              <Recharts.PieChart>
-                <Recharts.Pie
-                  data={issueCounts}
-                  dataKey="count"
-                  nameKey="issue"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  fill="#10b981"
-                  label
-                  style={{ fontSize: 12 }}
-                >
-                  {issueCounts.map((entry, index) => (
-                    <Recharts.Cell key={`cell-${index}`} fill={['#10b981', '#ef4444', '#f59e0b'][index % 3]} />
-                  ))}
-                </Recharts.Pie>
-                <Recharts.Tooltip />
-                <Recharts.Legend />
-              </Recharts.PieChart>
-            </Recharts.ResponsiveContainer>
-          </div>
-        </div>
-      );
+        );
+      };
 
       const SummaryPage = () => (
         <div>
@@ -815,7 +914,23 @@
           <div>
             <h2 className="text-2xl font-semibold mb-6">History Log</h2>
             <div className="bg-white p-6 rounded-lg shadow-md">
-              <h3 className="text-xl font-semibold mb-4">Change History</h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold">Change History</h3>
+                <div className="flex gap-2">
+                  <button
+                    className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+                    onClick={handleClearHistory}
+                  >
+                    Clear History
+                  </button>
+                  <button
+                    className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+                    onClick={handleExportHistoryToCSV}
+                  >
+                    Export History to CSV
+                  </button>
+                </div>
+              </div>
               <div className="flex flex-wrap gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Select Line</label>
@@ -846,7 +961,7 @@
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">&nbsp;</label>
+                  <label className="block text-sm font-medium mb-1"> </label>
                   <button
                     className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
                     onClick={() => {
