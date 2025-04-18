@@ -1,9 +1,17 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
 <head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <title>Downtime Logger</title>
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <meta name="CocoaVersion" content="2575.5">
+  <style type="text/css">
+    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
+  </style>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Downtime Logger</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -149,6 +157,15 @@
           return initialDates;
         }
       });
+      const [historyLog, setHistoryLog] = useState(() => {
+        try {
+          const savedHistory = localStorage.getItem('downtimeLoggerHistory');
+          return savedHistory ? JSON.parse(savedHistory) : [];
+        } catch (e) {
+          console.error('Error loading history from localStorage:', e);
+          return [];
+        }
+      });
       const [currentLine, setCurrentLine] = useState('Line 1');
       const [currentDay, setCurrentDay] = useState('2025-04-13');
       const [currentPage, setCurrentPage] = useState('main');
@@ -160,6 +177,7 @@
       const [selectedIssueType, setSelectedIssueType] = useState('All Issues');
 
       const textareaRefs = useRef(defaultHeadData.map(() => React.createRef()));
+      const pendingHistoryUpdates = useRef({});
 
       useEffect(() => {
         try {
@@ -176,6 +194,14 @@
           console.error('Failed to save dates to localStorage:', e);
         }
       }, [dates]);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('downtimeLoggerHistory', JSON.stringify(historyLog));
+        } catch (e) {
+          console.error('Failed to save history to localStorage:', e);
+        }
+      }, [historyLog]);
 
       useEffect(() => {
         setTimeout(() => {
@@ -197,7 +223,7 @@
       const excelDateToJSDate = (serial) => {
         const utc_days = Math.floor(serial - 25569);
         const date = new Date(utc_days * 86400 * 1000);
-        return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD
+        return date.toISOString().split('T')[0];
       };
 
       const handleFileImport = async (event) => {
@@ -227,7 +253,6 @@
                 '45764': '2025-04-17'
               };
 
-              // Process running status from "Day X Run" columns
               const runData = {};
               for (let row = 0; row < jsonData.length; row++) {
                 if (jsonData[row][0]?.startsWith('Line')) {
@@ -243,7 +268,6 @@
                 }
               }
 
-              // Process head-specific data for offline status
               let currentLine = null;
               let currentDay = null;
               const headData = {};
@@ -259,11 +283,9 @@
                     headData[currentLine][currentDay] = headData[currentLine][currentDay] || { heads: [...defaultHeadData] };
                   }
                 } else if (firstCell === 'Head' && currentLine && currentDay) {
-                  // Map row to day based on position (B6:O6, B13:O13, etc.)
-                  const dayRows = [6, 13, 20, 27, 34].map(r => r - 6); // Adjust for JSON indexing (0-based, skipping headers)
+                  const dayRows = [6, 13, 20, 27, 34].map(r => r - 6);
                   const currentRowIndex = row;
                   const dayIndex = dayRows.findIndex(r => {
-                    // Check if this row matches a "Head" row for a day
                     const expectedRow = jsonData.findIndex((r, i) => i >= currentRowIndex && r[0] === 'Head' && i === currentRowIndex);
                     return expectedRow === currentRowIndex;
                   });
@@ -273,23 +295,21 @@
                     const heads = jsonData[row].slice(1, 15).map((val, idx) => ({
                       head: idx + 1,
                       offline: val === 'X' ? 'Offline' : 'Active',
-                      issue: 'None', // Preserve default or existing issue
-                      repaired: val === 'X' ? 'N/A' : 'N/A', // Preserve default
-                      notes: '' // Preserve default or existing notes
+                      issue: 'None',
+                      repaired: val === 'X' ? 'N/A' : 'N/A',
+                      notes: ''
                     }));
                     headData[currentLine][currentDay].heads = heads;
                   }
                 }
               }
 
-              // Update running status
               Object.keys(newData).forEach(line => {
                 if (runData[line]) {
                   newData[line].running = { ...newData[line].running, ...runData[line] };
                 }
               });
 
-              // Update head data
               Object.keys(headData).forEach(line => {
                 if (newData[line]) {
                   Object.keys(headData[line]).forEach(date => {
@@ -359,6 +379,21 @@
         }
       };
 
+      const addToHistoryLog = (entry) => {
+        setHistoryLog(prev => [
+          ...prev,
+          {
+            ...entry,
+            timestamp: new Date().toISOString(),
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          }
+        ]);
+      };
+
+      const deleteHistoryItem = (id) => {
+        setHistoryLog(prev => prev.filter(entry => entry.id !== id));
+      };
+
       const handleDropdownChange = (headIndex, field, value) => {
         console.log(`handleDropdownChange: headIndex=${headIndex}, field=${field}, value=${value}`);
         try {
@@ -368,30 +403,57 @@
             const dayData = { ...lineData[currentDay], heads: [...(lineData[currentDay]?.heads || defaultHeadData)] };
             const headData = { ...dayData.heads[headIndex] };
 
-            if (field === 'notes') {
-              headData.notes = value.trim();
-            } else {
-              headData[field] = value;
-              if (field === 'offline') {
-                headData.issue = value === 'Active' ? 'None' : headData.issue;
-                headData.repaired = value === 'Active' ? 'N/A' : headData.repaired;
-                headData.notes = value === 'Active' ? '' : headData.notes;
-              }
-              if (field === 'issue') {
-                headData.repaired = value === 'None' ? 'N/A' : headData.repaired;
-                headData.notes = value === 'None' ? '' : headData.notes;
-              }
+            headData[field] = value;
+
+            if (field === 'offline' && value === 'Active') {
+              headData.issue = 'None';
+              headData.repaired = 'N/A';
+              headData.notes = '';
+            } else if (field === 'issue' && value === 'None') {
+              headData.repaired = 'N/A';
             }
 
             dayData.heads[headIndex] = headData;
             lineData[currentDay] = dayData;
             newData[currentLine] = lineData;
-            console.log('State updated for', currentLine, currentDay, headIndex);
+
             return newData;
           });
         } catch (e) {
           console.error('handleDropdownChange error:', e);
-          setError('Failed to update data. Please try again.');
+          setError('Failed to update head data. Please try again.');
+        }
+      };
+
+      const handleSaveToHistory = () => {
+        try {
+          const heads = data[currentLine][currentDay]?.heads || defaultHeadData;
+          const offlineHeads = heads.filter(head => head.offline === 'Offline');
+
+          offlineHeads.forEach((head, index) => {
+            const entry = {
+              line: currentLine,
+              date: currentDay,
+              head: head.head,
+              offline: head.offline,
+              issue: head.issue,
+              repaired: head.repaired,
+              notes: head.notes || '',
+              change: `Head ${head.head} status updated`
+            };
+            addToHistoryLog(entry);
+          });
+
+          pendingHistoryUpdates.current = {};
+
+          if (offlineHeads.length === 0) {
+            setError('No offline heads to save to history.');
+          } else {
+            setError(null);
+          }
+        } catch (e) {
+          console.error('handleSaveToHistory error:', e);
+          setError('Failed to save to history. Please try again.');
         }
       };
 
@@ -412,21 +474,12 @@
 
       const handleReset = () => {
         try {
-          if (window.confirm('Are you sure you want to reset all data to defaults? This will clear all changes.')) {
-            setData(initialData);
-            setDates(initialDates);
-            setCurrentLine('Line 1');
-            setCurrentDay('2025-04-13');
-            setSelectedSummaryDay('All Days');
-            setSelectedRunningLinesDay('All Days');
-            setSelectedIssueType('All Issues');
-            try {
-              localStorage.removeItem('downtimeLoggerData');
-              localStorage.removeItem('downtimeLoggerDates');
-            } catch (e) {
-              console.error('Failed to clear localStorage:', e);
-            }
-          }
+          setData(JSON.parse(JSON.stringify(initialData)));
+          setDates([...initialDates]);
+          setHistoryLog([]);
+          setCurrentLine('Line 1');
+          setCurrentDay('2025-04-13');
+          setError(null);
         } catch (e) {
           console.error('handleReset error:', e);
           setError('Failed to reset data. Please try again.');
@@ -436,19 +489,21 @@
       const exportToCSV = () => {
         try {
           const csvData = [];
+          csvData.push(['Line', 'Section', 'Date', 'Running', ...Array.from({ length: 14 }, (_, i) => [
+            `Head${i + 1}_Offline`, `Head${i + 1}_Issue`, `Head${i + 1}_Repaired`, `Head${i + 1}_Notes`
+          ]).flat()]);
+
           lines.forEach(line => {
             dates.forEach(day => {
-              const row = {
-                Line: line.name,
-                Section: line.section,
-                Date: day.date,
-                Running: data[line.name].running[day.date] || 'No'
-              };
-              (data[line.name][day.date]?.heads || defaultHeadData).forEach(head => {
-                row[`Head${head.head}_Offline`] = head.offline;
-                row[`Head${head.head}_Issue`] = head.issue;
-                row[`Head${head.head}_Repaired`] = head.repaired;
-                row[`Head${head.head}_Notes`] = head.notes || '';
+              const row = [
+                line.name,
+                line.section,
+                day.date,
+                data[line.name].running[day.date] || 'No'
+              ];
+              const heads = data[line.name][day.date]?.heads || defaultHeadData;
+              heads.forEach(head => {
+                row.push(head.offline, head.issue, head.repaired, head.notes || '');
               });
               csvData.push(row);
             });
@@ -458,8 +513,9 @@
           const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
-          link.download = 'Downtime_Log.csv';
+          link.download = 'downtime_log.csv';
           link.click();
+          URL.revokeObjectURL(link.href);
         } catch (e) {
           console.error('exportToCSV error:', e);
           setError('Failed to export CSV. Please try again.');
@@ -468,195 +524,144 @@
 
       const exportToPDF = () => {
         try {
-          console.log('Starting PDF export for day:', selectedSummaryDay);
-          if (!window.jspdf || !window.jspdf.jsPDF) {
-            console.error('jsPDF not loaded');
-            setError('PDF library failed to load. Please try again.');
-            return;
-          }
-
           const { jsPDF } = window.jspdf;
           const doc = new jsPDF();
-          const pageWidth = doc.internal.pageSize.getWidth();
-          let yOffset = 20;
+          doc.text('Manufacturing Downtime Log', 14, 20);
+          const tableData = [];
 
-          doc.setFontSize(16);
-          doc.text('Ishida CCW Downtime Report', pageWidth / 2, yOffset, { align: 'center' });
-          yOffset += 10;
-
-          doc.setFontSize(12);
-          const currentDate = new Date().toLocaleString();
-          console.log('Adding date to PDF:', currentDate);
-          doc.text(`Generated: ${currentDate}`, pageWidth / 2, yOffset, { align: 'center' });
-          yOffset += 10;
-
-          const dayLabel = selectedSummaryDay === 'All Days' ? 'All Days' : dates.find(d => d.date === selectedSummaryDay)?.label || selectedSummaryDay;
-          console.log('Adding day label to PDF:', dayLabel);
-          doc.text(`Day: ${dayLabel}${selectedSummaryDay !== 'All Days' ? ` (${selectedSummaryDay})` : ''}`, 20, yOffset);
-          yOffset += 10;
-
-          doc.setFontSize(14);
-          doc.text('Overall Summary', 20, yOffset);
-          yOffset += 10;
-          doc.setFontSize(12);
-          console.log('Adding metrics: lines running=', totalLinesRunning, 'heads offline=', totalHeadsDown);
-          doc.text(`Total Lines Running: ${totalLinesRunning}`, 20, yOffset);
-          yOffset += 5;
-          doc.text(`Total Heads Offline: ${totalHeadsDown}`, 20, yOffset);
-          yOffset += 10;
-
-          console.log('Preparing Heads Down Summary data');
-          const headsDownData = headsDownSummary
-            .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
-            .map(entry => [
-              entry.line || 'N/A',
-              entry.section || 'N/A',
-              `${entry.dayLabel} (${entry.date})`,
-              entry.headsOffline.map(h => h.head).join(', ') || 'None',
-              entry.headsOffline.map(h => h.issue).join(', ') || 'None',
-              entry.headsOffline.map(h => h.repaired).join(', ') || 'None',
-              entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ') || 'None'
-            ]);
-
-          console.log('Heads Down data:', headsDownData);
-          doc.autoTable({
-            head: [['Line', 'Section', 'Day', 'Heads Offline', 'Issues', 'Repaired', 'Notes']],
-            body: headsDownData.length > 0 ? headsDownData : [['No offline heads recorded']],
-            startY: yOffset,
-            styles: { fontSize: 10 },
-            headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255] },
-            bodyStyles: { minCellHeight: 10 }
+          lines.forEach(line => {
+            dates.forEach(day => {
+              const heads = data[line.name][day.date]?.heads || defaultHeadData;
+              heads.forEach(head => {
+                tableData.push([
+                  line.name,
+                  line.section,
+                  day.date,
+                  data[line.name].running[day.date] || 'No',
+                  head.head,
+                  head.offline,
+                  head.issue,
+                  head.repaired,
+                  head.notes || 'N/A'
+                ]);
+              });
+            });
           });
 
-          doc.save(`Downtime_Report_${selectedSummaryDay.replace(/\s+/g, '_')}.pdf`);
+          doc.autoTable({
+            head: [['Line', 'Section', 'Date', 'Running', 'Head', 'Offline', 'Issue', 'Repaired', 'Notes']],
+            body: tableData,
+            startY: 30,
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [59, 130, 246] }
+          });
+
+          doc.save('downtime_log.pdf');
         } catch (e) {
           console.error('exportToPDF error:', e);
           setError('Failed to export PDF. Please try again.');
         }
       };
 
-      const totalHeadsDown = Object.keys(data).reduce((sum, line) => {
-        return sum + dates.reduce((daySum, day) => {
-          return daySum + (data[line][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length;
+      const totalHeadsDown = Object.keys(data).reduce((acc, line) => {
+        return acc + dates.reduce((sum, day) => {
+          const heads = data[line][day.date]?.heads || defaultHeadData;
+          return sum + heads.filter(head => head.offline === 'Offline').length;
         }, 0);
       }, 0);
-
-      const totalLinesRunning = Object.keys(data).reduce((sum, line) => {
-        return sum + dates.reduce((daySum, day) => {
-          return daySum + (data[line].running[day.date] === 'Yes' ? 1 : 0);
-        }, 0);
-      }, 0);
-
-      const issueCounts = issueTypes
-        .filter(issue => issue !== 'None')
-        .map(issue => ({
-          issue,
-          count: Object.keys(data).reduce((sum, line) => {
-            return sum + dates.reduce((daySum, day) => {
-              return daySum + (data[line][day.date]?.heads || defaultHeadData).filter(head => head.issue === issue).length;
-            }, 0);
-          }, 0)
-        }))
-        .filter(ic => ic.count > 0);
-
-      const activeLines = Object.keys(data).filter(line =>
-        dates.some(day => (data[line][day.date]?.heads || defaultHeadData).some(head => head.offline === 'Offline'))
-      );
-
-      const headsDownSummary = lines.flatMap(line =>
-        dates.map(day => {
-          const headsOffline = (data[line.name][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline');
-          return {
-            line: line.name,
-            section: line.section,
-            date: day.date,
-            dayLabel: day.label,
-            headsOffline
-          };
-        })
-      ).filter(entry => entry.headsOffline.length > 0);
 
       const totalHeadsDownPerDay = dates.map(day => ({
         day: day.label,
-        date: day.date,
         heads: Object.keys(data).reduce((sum, line) => {
-          return sum + (data[line][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length;
+          const heads = data[line][day.date]?.heads || defaultHeadData;
+          return sum + heads.filter(head => head.offline === 'Offline').length;
         }, 0)
       }));
 
-      const runningLinesPerDay = dates.map(day => ({
-        day: day.label,
-        date: day.date,
-        lines: Object.keys(data).reduce((sum, line) => {
-          return sum + (data[line].running[day.date] === 'Yes' ? 1 : 0);
-        }, 0)
-      }));
-
-      const issueTrends = dates.map(day => {
-        const counts = { day: day.label };
-        issueTypes.filter(issue => issue !== 'None').forEach(issue => {
-          counts[issue] = Object.keys(data).reduce((sum, line) => {
-            return sum + (data[line][day.date]?.heads || defaultHeadData).filter(head => head.issue === issue).length;
+      const issueCounts = issueTypes.reduce((acc, type) => {
+        if (type === 'None') return acc;
+        const count = Object.keys(data).reduce((sum, line) => {
+          return sum + dates.reduce((daySum, day) => {
+            const heads = data[line][day.date]?.heads || defaultHeadData;
+            return daySum + heads.filter(head => head.issue === type).length;
           }, 0);
+        }, 0);
+        if (count > 0) {
+          acc.push({ issue: type, count });
+        }
+        return acc;
+      }, []);
+
+      const activeLines = Object.keys(data).filter(line => {
+        return dates.some(day => {
+          const heads = data[line][day.date]?.heads || defaultHeadData;
+          return heads.some(head => head.offline === 'Offline');
         });
-        return counts;
       });
 
       const DaySummaryModal = ({ dayLabel }) => {
         const day = dates.find(d => d.label === dayLabel);
         if (!day) return null;
 
-        const daySummary = lines
-          .map(line => {
-            const headsOffline = (data[line.name][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline');
-            return {
+        const offlineLines = lines.reduce((acc, line) => {
+          const heads = data[line.name][day.date]?.heads || defaultHeadData;
+          const offlineHeads = heads.filter(head => head.offline === 'Offline');
+          if (offlineHeads.length > 0) {
+            acc.push({
               line: line.name,
               section: line.section,
-              headsOffline
-            };
-          })
-          .filter(entry => entry.headsOffline.length > 0);
+              offlineHeads: offlineHeads.map(head => ({
+                head: head.head,
+                issue: head.issue,
+                repaired: head.repaired,
+                notes: head.notes || 'N/A'
+              }))
+            });
+          }
+          return acc;
+        }, []);
 
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-lg max-w-4xl w-full max-h-[80vh] overflow-y-auto">
-              <h2 className="text-2xl font-semibold mb-4">{dayLabel} Offline Summary ({day.date})</h2>
-              <table className="min-w-full bg-white">
-                <thead>
-                  <tr className="bg-gray-200">
-                    <th className="px-4 py-2 text-left">Line</th>
-                    <th className="px-4 py-2 text-left">Section</th>
-                    <th className="px-4 py-2 text-left">Heads Offline</th>
-                    <th className="px-4 py-2 text-left">Issues</th>
-                    <th className="px-4 py-2 text-left">Repaired</th>
-                    <th className="px-4 py-2 text-left">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {daySummary.length > 0 ? (
-                    daySummary.map((entry, index) => (
-                      <tr key={index} className="border-t">
-                        <td className="px-4 py-2">{entry.line}</td>
-                        <td className="px-4 py-2">{entry.section}</td>
-                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.head).join(', ') || 'None'}</td>
-                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.issue).join(', ') || 'None'}</td>
-                        <td className="px-4 py-2">{entry.headsOffline.map(h => h.repaired).join(', ') || 'None'}</td>
-                        <td className="px-4 py-2">{entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ') || 'None'}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="6" className="px-4 py-2 text-center">No offline heads recorded.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-              <button
-                className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
-                onClick={() => setSummaryDay(null)}
-              >
-                Close
-              </button>
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-3xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">{dayLabel} Offline Summary</h2>
+                <button
+                  className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+                  onClick={() => setSummaryDay(null)}
+                >
+                  Close
+                </button>
+              </div>
+              {offlineLines.length === 0 ? (
+                <p className="text-gray-600">No offline heads for {dayLabel}.</p>
+              ) : (
+                offlineLines.map(line => (
+                  <div key={line.line} className="mb-4">
+                    <h3 className="text-lg font-semibold">{line.section}: {line.line}</h3>
+                    <table className="min-w-full bg-white mt-2">
+                      <thead>
+                        <tr className="bg-gray-200">
+                          <th className="px-4 py-2 text-left">Head</th>
+                          <th className="px-4 py-2 text-left">Issue</th>
+                          <th className="px-4 py-2 text-left">Repaired</th>
+                          <th className="px-4 py-2 text-left">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {line.offlineHeads.map(head => (
+                          <tr key={head.head} className="border-t">
+                            <td className="px-4 py-2">{head.head}</td>
+                            <td className="px-4 py-2">{head.issue}</td>
+                            <td className="px-4 py-2">{head.repaired}</td>
+                            <td className="px-4 py-2">{head.notes}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         );
@@ -664,166 +669,189 @@
 
       const DashboardPage = () => (
         <div>
-          <h2 className="text-2xl font-semibold mb-6">Real-Time Dashboard</h2>
+          <h2 className="text-2xl font-semibold mb-6">Dashboard</h2>
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h3 className="text-xl font-semibold mb-4">Line Status Overview</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {lines.map(line => (
-                <div key={line.name} className="p-4 bg-gray-50 rounded-md">
-                  <h4 className="font-medium">{line.section}: {line.name}</h4>
-                  <p>Running: {data[line.name].running[currentDay] || 'No'}</p>
-                  <p>Heads Down: {(data[line.name][currentDay]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length}</p>
-                </div>
-              ))}
-            </div>
+            <h3 className="text-xl font-semibold mb-4">Total Heads Down Per Day (All Lines)</h3>
+            <Recharts.ResponsiveContainer width="100%" height={300}>
+              <Recharts.BarChart data={totalHeadsDownPerDay}>
+                <Recharts.CartesianGrid strokeDasharray="3 3" />
+                <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
+                <Recharts.YAxis
+                  label={{ value: 'Heads Down', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                  style={{ fontSize: 12 }}
+                />
+                <Recharts.Tooltip />
+                <Recharts.Legend />
+                <Recharts.Bar dataKey="heads" fill="#3b82f6" />
+              </Recharts.BarChart>
+            </Recharts.ResponsiveContainer>
+          </div>
+          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h3 className="text-xl font-semibold mb-4">Issue Distribution (All Lines)</h3>
+            <Recharts.ResponsiveContainer width="100%" height={300}>
+              <Recharts.PieChart>
+                <Recharts.Pie
+                  data={issueCounts}
+                  dataKey="count"
+                  nameKey="issue"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  fill="#10b981"
+                  label
+                  style={{ fontSize: 12 }}
+                >
+                  {issueCounts.map((entry, index) => (
+                    <Recharts.Cell key={`cell-${index}`} fill={['#10b981', '#ef4444', '#f59e0b'][index % 3]} />
+                  ))}
+                </Recharts.Pie>
+                <Recharts.Tooltip />
+                <Recharts.Legend />
+              </Recharts.PieChart>
+            </Recharts.ResponsiveContainer>
           </div>
         </div>
       );
 
       const SummaryPage = () => (
         <div>
-          <h2 className="text-2xl font-semibold mb-6">Summary Page</h2>
+          <h2 className="text-2xl font-semibold mb-6">Summary</h2>
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h3 className="text-xl font-semibold mb-4">Heads Down Summary</h3>
-            <div className="mb-4">
-              <label className="block text-lg font-semibold mb-2">Select Day:</label>
-              <select
-                className="w-full p-2 border rounded-md"
-                value={selectedSummaryDay}
-                onChange={(e) => setSelectedSummaryDay(e.target.value)}
-              >
-                <option value="All Days">All Days</option>
-                {dates.map(day => (
-                  <option key={day.date} value={day.date}>{day.label} ({day.date})</option>
-                ))}
-              </select>
-            </div>
-            <table className="min-w-full bg-white">
-              <thead>
-                <tr className="bg-gray-200">
-                  <th className="px-4 py-2 text-left">Line</th>
-                  <th className="px-4 py-2 text-left">Section</th>
-                  <th className="px-4 py-2 text-left">Day</th>
-                  <th className="px-4 py-2 text-left">Heads Offline</th>
-                  <th className="px-4 py-2 text-left">Issues</th>
-                  <th className="px-4 py-2 text-left">Repaired</th>
-                  <th className="px-4 py-2 text-left">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {headsDownSummary
-                  .filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay)
-                  .map((entry, index) => (
-                    <tr key={index} className="border-t">
-                      <td className="px-4 py-2">{entry.line}</td>
-                      <td className="px-4 py-2">{entry.section}</td>
-                      <td className="px-4 py-2">{entry.dayLabel} ({entry.date})</td>
-                      <td className="px-4 py-2">{entry.headsOffline.map(h => h.head).join(', ') || 'None'}</td>
-                      <td className="px-4 py-2">{entry.headsOffline.map(h => h.issue).join(', ') || 'None'}</td>
-                      <td className="px-4 py-2">{entry.headsOffline.map(h => h.repaired).join(', ') || 'None'}</td>
-                      <td className="px-4 py-2">{entry.headsOffline.map(h => `Head ${h.head}: ${h.notes || 'None'}`).join('; ') || 'None'}</td>
-                    </tr>
+            <div className="flex flex-wrap gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Select Day for Offline Summary</label>
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={selectedSummaryDay}
+                  onChange={(e) => setSelectedSummaryDay(e.target.value)}
+                >
+                  <option value="All Days">All Days</option>
+                  {dates.map(day => (
+                    <option key={day.date} value={day.label}>{day.label}</option>
                   ))}
-                {headsDownSummary.filter(entry => selectedSummaryDay === 'All Days' || entry.date === selectedSummaryDay).length === 0 && (
-                  <tr>
-                    <td colSpan="7" className="px-4 py-2 text-center">No offline heads recorded.</td>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Select Day for Running Lines</label>
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={selectedRunningLinesDay}
+                  onChange={(e) => setSelectedRunningLinesDay(e.target.value)}
+                >
+                  <option value="All Days">All Days</option>
+                  {dates.map(day => (
+                    <option key={day.date} value={day.label}>{day.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Select Issue Type</label>
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={selectedIssueType}
+                  onChange={(e) => setSelectedIssueType(e.target.value)}
+                >
+                  <option value="All Issues">All Issues</option>
+                  {issueTypes.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white">
+                <thead>
+                  <tr className="bg-gray-200">
+                    <th className="px-4 py-2 text-left">Line</th>
+                    <th className="px-4 py-2 text-left">Section</th>
+                    <th className="px-4 py-2 text-left">Date</th>
+                    <th className="px-4 py-2 text-left">Running</th>
+                    <th className="px-4 py-2 text-left">Offline Heads</th>
+                    <th className="px-4 py-2 text-left">Issues</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h3 className="text-xl font-semibold mb-4">Running Lines Summary</h3>
-            <div className="mb-4">
-              <label className="block text-lg font-semibold mb-2">Select Day:</label>
-              <select
-                className="w-full p-2 border rounded-md"
-                value={selectedRunningLinesDay}
-                onChange={(e) => setSelectedRunningLinesDay(e.target.value)}
-              >
-                <option value="All Days">All Days</option>
-                {dates.map(day => (
-                  <option key={day.date} value={day.date}>{day.label} ({day.date})</option>
-                ))}
-              </select>
+                </thead>
+                <tbody>
+                  {lines.map(line => {
+                    return dates
+                      .filter(day => selectedSummaryDay === 'All Days' || day.label === selectedSummaryDay)
+                      .map(day => {
+                        const heads = data[line.name][day.date]?.heads || defaultHeadData;
+                        const offlineHeads = heads.filter(head => head.offline === 'Offline');
+                        const issues = offlineHeads
+                          .filter(head => selectedIssueType === 'All Issues' || head.issue === selectedIssueType)
+                          .map(head => `Head ${head.head}: ${head.issue} (${head.repaired})`);
+                        if (selectedRunningLinesDay !== 'All Days' && day.label !== selectedRunningLinesDay) {
+                          return null;
+                        }
+                        return (
+                          <tr key={`${line.name}-${day.date}`} className="border-t">
+                            <td className="px-4 py-2">{line.name}</td>
+                            <td className="px-4 py-2">{line.section}</td>
+                            <td className="px-4 py-2">{day.date}</td>
+                            <td className="px-4 py-2">{data[line.name].running[day.date] || 'No'}</td>
+                            <td className="px-4 py-2">{offlineHeads.length > 0 ? offlineHeads.map(h => h.head).join(', ') : 'None'}</td>
+                            <td className="px-4 py-2">{issues.length > 0 ? issues.join('; ') : 'None'}</td>
+                          </tr>
+                        );
+                      });
+                  })}
+                </tbody>
+              </table>
             </div>
-            <table className="min-w-full bg-white">
-              <thead>
-                <tr className="bg-gray-200">
-                  <th className="px-4 py-2 text-left">Day</th>
-                  <th className="px-4 py-2 text-left">Lines Running</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runningLinesPerDay
-                  .filter(day => selectedRunningLinesDay === 'All Days' || day.date === selectedRunningLinesDay)
-                  .map((day, index) => (
-                    <tr key={index} className="border-t">
-                      <td className="px-4 py-2">{day.day} ({day.date})</td>
-                      <td className="px-4 py-2">{day.lines}</td>
+          </div>
+        </div>
+      );
+
+      const HistoryPage = () => (
+        <div>
+          <h2 className="text-2xl font-semibold mb-6">History Log</h2>
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h3 className="text-xl font-semibold mb-4">Change History</h3>
+            {historyLog.length === 0 ? (
+              <p className="text-gray-600">No history entries yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full bg-white">
+                  <thead>
+                    <tr className="bg-gray-200">
+                      <th className="px-4 py-2 text-left">Timestamp</th>
+                      <th className="px-4 py-2 text-left">Line</th>
+                      <th className="px-4 py-2 text-left">Date</th>
+                      <th className="px-4 py-2 text-left">Head</th>
+                      <th className="px-4 py-2 text-left">Offline Status</th>
+                      <th className="px-4 py-2 text-left">Issue</th>
+                      <th className="px-4 py-2 text-left">Repaired</th>
+                      <th className="px-4 py-2 text-left">Notes</th>
+                      <th className="px-4 py-2 text-left">Change</th>
+                      <th className="px-4 py-2 text-left">Action</th>
                     </tr>
-                  ))}
-              </tbody>
-            </table>
-            <Recharts.ResponsiveContainer width="100%" height={300}>
-              <Recharts.BarChart
-                data={runningLinesPerDay.filter(day => selectedRunningLinesDay === 'All Days' || day.date === selectedRunningLinesDay)}
-              >
-                <Recharts.CartesianGrid strokeDasharray="3 3" />
-                <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
-                <Recharts.YAxis
-                  label={{ value: 'Lines Running', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                  style={{ fontSize: 12 }}
-                />
-                <Recharts.Tooltip />
-                <Recharts.Legend />
-                <Recharts.Bar dataKey="lines" fill="#3b82f6" />
-              </Recharts.BarChart>
-            </Recharts.ResponsiveContainer>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h3 className="text-xl font-semibold mb-4">Issue Trends Over Time</h3>
-            <div className="mb-4">
-              <label className="block text-lg font-semibold mb-2">Select Issue Type:</label>
-              <select
-                className="w-full p-2 border rounded-md"
-                value={selectedIssueType}
-                onChange={(e) => {
-                  console.log('Selected issue type:', e.target.value);
-                  setSelectedIssueType(e.target.value);
-                }}
-              >
-                <option value="All Issues">All Issues</option>
-                {issueTypes.filter(issue => issue !== 'None').map(issue => (
-                  <option key={issue} value={issue}>{issue}</option>
-                ))}
-              </select>
-            </div>
-            <Recharts.ResponsiveContainer width="100%" height={300}>
-              <Recharts.LineChart data={issueTrends}>
-                <Recharts.CartesianGrid strokeDasharray="3 3" />
-                <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
-                <Recharts.YAxis
-                  label={{ value: 'Issue Count', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                  style={{ fontSize: 12 }}
-                />
-                <Recharts.Tooltip />
-                <Recharts.Legend />
-                {issueTypes
-                  .filter(issue => issue !== 'None' && (selectedIssueType === 'All Issues' || selectedIssueType === issue))
-                  .map((issue, index) => (
-                    <Recharts.Line
-                      key={issue}
-                      type="monotone"
-                      dataKey={issue}
-                      stroke={['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#f97316'][index % 7]}
-                      name={issue}
-                    />
-                  ))}
-              </Recharts.LineChart>
-            </Recharts.ResponsiveContainer>
+                  </thead>
+                  <tbody>
+                    {historyLog.map(entry => (
+                      <tr key={entry.id} className="border-t">
+                        <td className="px-4 py-2">{new Date(entry.timestamp).toLocaleString()}</td>
+                        <td className="px-4 py-2">{entry.line}</td>
+                        <td className="px-4 py-2">{entry.date}</td>
+                        <td className="px-4 py-2">{entry.head}</td>
+                        <td className="px-4 py-2">{entry.offline}</td>
+                        <td className="px-4 py-2">{entry.issue}</td>
+                        <td className="px-4 py-2">{entry.repaired}</td>
+                        <td className="px-4 py-2">{entry.notes || 'N/A'}</td>
+                        <td className="px-4 py-2">{entry.change}</td>
+                        <td className="px-4 py-2">
+                          <button
+                            className="bg-red-500 text-white px-2 py-1 rounded-md hover:bg-red-600"
+                            onClick={() => deleteHistoryItem(entry.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -918,9 +946,17 @@
           </div>
 
           <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-semibold mb-4">
-              {currentLine} - Head Status ({currentDay})
-            </h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">
+                {currentLine} - Head Status ({currentDay})
+              </h2>
+              <button
+                className="bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-600"
+                onClick={handleSaveToHistory}
+              >
+                Save to History
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full bg-white">
                 <thead>
@@ -1115,14 +1151,20 @@
                 Summary Page
               </button>
               <button
-                className={`px-4 py-2 rounded-md ${currentPage === 'dashboard' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                className={`px-4 py-2 mr-2 rounded-md ${currentPage === 'dashboard' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
                 onClick={() => setCurrentPage('dashboard')}
               >
                 Dashboard
               </button>
+              <button
+                className={`px-4 py-2 rounded-md ${currentPage === 'history' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                onClick={() => setCurrentPage('history')}
+              >
+                History Log
+              </button>
             </div>
 
-            {currentPage === 'main' ? <MainPage /> : currentPage === 'dashboard' ? <DashboardPage /> : <SummaryPage />}
+            {currentPage === 'main' ? <MainPage /> : currentPage === 'dashboard' ? <DashboardPage /> : currentPage === 'history' ? <HistoryPage /> : <SummaryPage />}
           </div>
         </ErrorBoundary>
       );
