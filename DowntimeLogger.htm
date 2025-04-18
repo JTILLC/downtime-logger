@@ -8,7 +8,9 @@
   <meta name="CocoaVersion" content="2575.5">
   <style type="text/css">
     p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
-    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min
+
+-height: 14.0px}
   </style>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -516,11 +518,13 @@
 
       const handleRunningChange = (value) => {
         try {
+          console.log(`handleRunningChange: line=${currentLine}, day=${currentDay}, value=${value}`);
           setData(prev => {
             const newData = { ...prev };
-            const lineData = { ...newData[currentLine] };
-            lineData.running = { ...lineData.running, [currentDay]: value };
+            const lineData = { ...newData[currentLine], running: { ...newData[currentLine].running } };
+            lineData.running[currentDay] = value;
             newData[currentLine] = lineData;
+            console.log(`Updated data for ${currentLine}:`, newData[currentLine].running);
             return newData;
           });
         } catch (e) {
@@ -726,11 +730,22 @@
 
       const DashboardPage = () => {
         const isLineRunning = (line, day) => {
+          console.log(`Checking isLineRunning for ${line.name}, day=${day}`);
           if (selectedDashboardDay === 'All Days') {
-            return dates.some(d => data[line.name].running[d.date] === 'Yes');
+            const isRunning = dates.some(d => {
+              const status = data[line.name]?.running?.[d.date] || 'No';
+              console.log(`  Day ${d.date}: status=${status}`);
+              return status === 'Yes';
+            });
+            console.log(`  All Days result for ${line.name}: ${isRunning}`);
+            return isRunning;
           }
-          return data[line.name].running[day] === 'Yes';
+          const status = data[line.name]?.running?.[day] || 'No';
+          console.log(`  Specific day ${day} for ${line.name}: status=${status}`);
+          return status === 'Yes';
         };
+
+        console.log('Dashboard data:', JSON.stringify(data, null, 2));
 
         return (
           <div>
