@@ -8,9 +8,7 @@
   <meta name="CocoaVersion" content="2575.5">
   <style type="text/css">
     p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
-    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min
-
--height: 14.0px}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
   </style>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -175,7 +173,6 @@
       const [error, setError] = useState(null);
       const [summaryDay, setSummaryDay] = useState(null);
       const [selectedSummaryDay, setSelectedSummaryDay] = useState('All Days');
-      const [selectedRunningLinesDay, setSelectedRunningLinesDay] = useState('All Days');
       const [selectedIssueType, setSelectedIssueType] = useState('All Issues');
       const [selectedHistoryLine, setSelectedHistoryLine] = useState('All Lines');
       const [selectedHistoryHead, setSelectedHistoryHead] = useState('All Heads');
@@ -728,6 +725,70 @@
         );
       };
 
+      const RunningLinesHeadsPage = () => {
+        const getHeadBlockColor = (head) => {
+          if (head.offline === 'Active') {
+            return 'bg-green-500 text-white';
+          }
+          if (head.offline === 'Offline' && head.repaired === 'Fixed') {
+            return 'bg-orange-500 text-white';
+          }
+          return 'bg-red-500 text-white';
+        };
+
+        const runningLines = lines.filter(line => {
+          if (selectedDashboardDay === 'All Days') {
+            return dates.some(d => data[line.name]?.running?.[d.date] === 'Yes');
+          }
+          return data[line.name]?.running?.[selectedDashboardDay] === 'Yes';
+        });
+
+        return (
+          <div>
+            <h2 className="text-2xl font-semibold mb-6">Running Lines Heads</h2>
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold">Head Status for Running Lines</h3>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Select Day</label>
+                  <select
+                    className="w-full p-2 border rounded-md"
+                    value={selectedDashboardDay}
+                    onChange={(e) => setSelectedDashboardDay(e.target.value)}
+                  >
+                    <option value="All Days">All Days</option>
+                    {dates.map(day => (
+                      <option key={day.date} value={day.date}>
+                        {day.label} ({day.date})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {runningLines.length === 0 ? (
+                <p className="text-gray-600">No lines running for {selectedDashboardDay === 'All Days' ? 'any day' : selectedDashboardDay}.</p>
+              ) : (
+                runningLines.map(line => (
+                  <div key={line.name} className="mb-6">
+                    <h4 className="text-lg font-semibold mb-2">{line.section}: {line.name}</h4>
+                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                      {(data[line.name][selectedDashboardDay]?.heads || defaultHeadData).map(head => (
+                        <div
+                          key={head.head}
+                          className={`w-12 h-12 flex items-center justify-center rounded-md text-sm font-semibold ${getHeadBlockColor(head)}`}
+                        >
+                          {head.head}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        );
+      };
+
       const DashboardPage = () => {
         const isLineRunning = (line, day) => {
           console.log(`Checking isLineRunning for ${line.name}, day=${day}`);
@@ -848,19 +909,6 @@
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Select Day for Running Lines</label>
-                <select
-                  className="w-full p-2 border rounded-md"
-                  value={selectedRunningLinesDay}
-                  onChange={(e) => setSelectedRunningLinesDay(e.target.value)}
-                >
-                  <option value="All Days">All Days</option>
-                  {dates.map(day => (
-                    <option key={day.date} value={day.label}>{day.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
                 <label className="block text-sm font-medium mb-1">Select Issue Type</label>
                 <select
                   className="w-full p-2 border rounded-md"
@@ -881,7 +929,6 @@
                     <th className="px-4 py-2 text-left">Line</th>
                     <th className="px-4 py-2 text-left">Section</th>
                     <th className="px-4 py-2 text-left">Date</th>
-                    <th className="px-4 py-2 text-left">Running</th>
                     <th className="px-4 py-2 text-left">Offline Heads</th>
                     <th className="px-4 py-2 text-left">Issues</th>
                   </tr>
@@ -896,15 +943,11 @@
                         const issues = offlineHeads
                           .filter(head => selectedIssueType === 'All Issues' || head.issue === selectedIssueType)
                           .map(head => `Head ${head.head}: ${head.issue} (${head.repaired})`);
-                        if (selectedRunningLinesDay !== 'All Days' && day.label !== selectedRunningLinesDay) {
-                          return null;
-                        }
                         return (
                           <tr key={`${line.name}-${day.date}`} className="border-t">
                             <td className="px-4 py-2">{line.name}</td>
                             <td className="px-4 py-2">{line.section}</td>
                             <td className="px-4 py-2">{day.date}</td>
-                            <td className="px-4 py-2">{data[line.name].running[day.date] || 'No'}</td>
                             <td className="px-4 py-2">{offlineHeads.length > 0 ? offlineHeads.map(h => h.head).join(', ') : 'None'}</td>
                             <td className="px-4 py-2">{issues.length > 0 ? issues.join('; ') : 'None'}</td>
                           </tr>
@@ -1040,271 +1083,286 @@
         );
       };
 
-      const MainPage = () => (
-        <div>
-          {error && (
-            <div className="bg-red-100 text-red-700 p-4 rounded-md mb-8">
-              {error}
-            </div>
-          )}
+      const MainPage = () => {
+        const getHeadRowColor = (head) => {
+          if (head.offline === 'Active') {
+            return 'bg-green-500 text-white';
+          }
+          if (head.offline === 'Offline' && head.repaired === 'Fixed') {
+            return 'bg-orange-500 text-white';
+          }
+          return 'bg-red-500 text-white';
+        };
 
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Manage Dates</h2>
-              <button
-                className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
-                onClick={handleReset}
-              >
-                Reset to Defaults
-              </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {dates.map(day => (
-                <div key={day.id}>
-                  <label className="block text-sm font-medium mb-1">{day.label}</label>
-                  <input
-                    type="date"
-                    className="w-full p-2 border rounded-md"
-                    value={day.date}
-                    onChange={(e) => handleDateChange(day.id, e.target.value)}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
+        return (
+          <div>
+            {error && (
+              <div className="bg-red-100 text-red-700 p-4 rounded-md mb-8">
+                {error}
+              </div>
+            )}
 
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-semibold mb-4">Import Data</h2>
-            <input
-              type="file"
-              accept=".csv,.xlsx"
-              className="w-full p-2 border rounded-md"
-              onChange={handleFileImport}
-            />
-            <p className="text-sm text-gray-500 mt-2">
-              Upload a CSV/XLSX file with columns: Line, Section, Date, Running, Head1_Offline, Head1_Issue, Head1_Repaired, Head1_Notes, ..., Head14_Notes
-            </p>
-          </div>
-
-          <div className="mb-8">
-            <label className="block text-lg font-semibold mb-2">Select Line:</label>
-            <select
-              className="w-full p-2 border rounded-md"
-              value={currentLine}
-              onChange={(e) => setCurrentLine(e.target.value)}
-            >
-              {lines.map(line => (
-                <option key={line.name} value={line.name}>
-                  {line.section}: {line.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="mb-8">
-            <label className="block text-lg font-semibold mb-2">Select Day:</label>
-            <select
-              className="w-full p-2 border rounded-md"
-              value={currentDay}
-              onChange={(e) => setCurrentDay(e.target.value)}
-            >
-              {dates.map(day => (
-                <option key={day.date} value={day.date}>
-                  {day.label} ({day.date})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="mb-8">
-            <label className="block text-lg font-semibold mb-2">Is {currentLine} Running?</label>
-            <select
-              className="w-full p-2 border rounded-md"
-              value={data[currentLine].running[currentDay] || 'No'}
-              onChange={(e) => handleRunningChange(e.target.value)}
-            >
-              <option value="No">No</option>
-              <option value="Yes">Yes</option>
-              <option value="N/A">N/A</option>
-            </select>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">
-                {currentLine} - Head Status ({currentDay})
-              </h2>
-              <button
-                className="bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-600"
-                onClick={handleSaveToHistory}
-              >
-                Save to History
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-white">
-                <thead>
-                  <tr className="bg-gray-200">
-                    <th className="px-4 py-2 text-left">Head</th>
-                    <th className="px-4 py-2 text-left">Offline Status</th>
-                    <th className="px-4 py-2 text-left">Issue Type</th>
-                    <th className="px-4 py-2 text-left">Repaired</th>
-                    <th className="px-4 py-2 text-left">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data[currentLine][currentDay]?.heads || defaultHeadData).map((head, index) => (
-                    <tr key={`head-${head.head}-${currentLine}-${currentDay}`} className="border-t">
-                      <td className="px-4 py-2">{head.head}</td>
-                      <td className="px-4 py-2">
-                        <select
-                          className="w-full p-1 border rounded-md"
-                          value={head.offline}
-                          onChange={(e) => handleDropdownChange(index, 'offline', e.target.value)}
-                        >
-                          <option value="Active">Active</option>
-                          <option value="Offline">Offline</option>
-                        </select>
-                      </td>
-                      <td className="px-4 py-2">
-                        <select
-                          className="w-full p-1 border rounded-md"
-                          value={head.issue}
-                          onChange={(e) => handleDropdownChange(index, 'issue', e.target.value)}
-                          disabled={head.offline !== 'Offline'}
-                        >
-                          {issueTypes.map(type => (
-                            <option key={type} value={type}>{type}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-4 py-2">
-                        <select
-                          className="w-full p-1 border rounded-md"
-                          value={head.repaired}
-                          onChange={(e) => handleDropdownChange(index, 'repaired', e.target.value)}
-                          disabled={head.offline !== 'Offline' || head.issue === 'None'}
-                        >
-                          <option value="N/A">N/A</option>
-                          <option value="Fixed">Fixed</option>
-                          <option value="Not Fixed">Not Fixed</option>
-                        </select>
-                      </td>
-                      <td className="px-4 py-2">
-                        <input
-                          type="text"
-                          className="w-full p-1 border rounded-md"
-                          defaultValue={head.notes || ''}
-                          ref={textareaRefs.current[index]}
-                          maxLength="200"
-                          placeholder="Notes (max 200 chars)"
-                          disabled={head.offline !== 'Offline'}
-                          onBlur={(e) => {
-                            console.log(`Notes blur: head=${head.head}, value=${e.target.value}`);
-                            handleDropdownChange(index, 'notes', e.target.value);
-                          }}
-                          onTouchStart={(e) => {
-                            console.log(`Notes touch: head=${head.head}`);
-                            e.target.focus();
-                          }}
-                          onClick={(e) => {
-                            console.log(`Notes click: head=${head.head}`);
-                            e.target.focus();
-                          }}
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          {(head.notes || '').length}/200
-                        </p>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-semibold mb-4">Heads Down Per Day ({currentLine})</h2>
-            <Recharts.ResponsiveContainer width="100%" height={300}>
-              <Recharts.BarChart data={totalHeadsDownPerDay}>
-                <Recharts.CartesianGrid strokeDasharray="3 3" />
-                <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
-                <Recharts.YAxis
-                  label={{ value: 'Heads Down', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                  style={{ fontSize: 12 }}
-                />
-                <Recharts.Tooltip />
-                <Recharts.Legend />
-                <Recharts.Bar dataKey="heads" fill="#3b82f6" />
-              </Recharts.BarChart>
-            </Recharts.ResponsiveContainer>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-semibold mb-4">Issue Distribution (All Lines)</h2>
-            <Recharts.ResponsiveContainer width="100%" height={300}>
-              <Recharts.PieChart>
-                <Recharts.Pie
-                  data={issueCounts}
-                  dataKey="count"
-                  nameKey="issue"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  fill="#10b981"
-                  label
-                  style={{ fontSize: 12 }}
-                >
-                  {issueCounts.map((entry, index) => (
-                    <Recharts.Cell key={`cell-${index}`} fill={['#10b981', '#ef4444', '#f59e0b'][index % 3]} />
-                  ))}
-                </Recharts.Pie>
-                <Recharts.Tooltip />
-                <Recharts.Legend />
-              </Recharts.PieChart>
-            </Recharts.ResponsiveContainer>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Summary</h2>
-              <div className="flex flex-wrap gap-2">
-                {dates.map(day => (
-                  <button
-                    key={day.label}
-                    className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600"
-                    onClick={() => setSummaryDay(day.label)}
-                  >
-                    {day.label} Offline Summary
-                  </button>
-                ))}
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Manage Dates</h2>
                 <button
-                  className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
-                  onClick={exportToCSV}
+                  className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+                  onClick={handleReset}
                 >
-                  Export to CSV
-                </button>
-                <button
-                  className="bg-purple-500 text-white px-4 py-2 rounded-md hover:bg-purple-600"
-                  onClick={exportToPDF}
-                >
-                  Download PDF Report
+                  Reset to Defaults
                 </button>
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {dates.map(day => (
+                  <div key={day.id}>
+                    <label className="block text-sm font-medium mb-1">{day.label}</label>
+                    <input
+                      type="date"
+                      className="w-full p-2 border rounded-md"
+                      value={day.date}
+                      onChange={(e) => handleDateChange(day.id, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-            <p className="text-gray-600">
-              Total heads down across all lines and days: {totalHeadsDown}.<br />
-              Issues recorded: {issueCounts.map(ic => `${ic.issue}: ${ic.count}`).join(', ') || 'None'}.<br />
-              Active lines with downtime: {activeLines.length > 0 ? activeLines.join(', ') : 'None'}.<br />
-              {activeLines.length > 0
-                ? `Downtime is recorded across ${activeLines.length} line(s). Update statuses using the dropdowns to log new issues.`
-                : `No downtime recorded. Update statuses using the dropdowns to log issues.`}
-            </p>
-          </div>
 
-          {summaryDay && <DaySummaryModal dayLabel={summaryDay} />}
-        </div>
-      );
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <h2 className="text-xl font-semibold mb-4">Import Data</h2>
+              <input
+                type="file"
+                accept=".csv,.xlsx"
+                className="w-full p-2 border rounded-md"
+                onChange={handleFileImport}
+              />
+              <p className="text-sm text-gray-500 mt-2">
+                Upload a CSV/XLSX file with columns: Line, Section, Date, Running, Head1_Offline, Head1_Issue, Head1_Repaired, Head1_Notes, ..., Head14_Notes
+              </p>
+            </div>
+
+            <div className="mb-8">
+              <label className="block text-lg font-semibold mb-2">Select Line:</label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={currentLine}
+                onChange={(e) => setCurrentLine(e.target.value)}
+              >
+                {lines.map(line => (
+                  <option key={line.name} value={line.name}>
+                    {line.section}: {line.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mb-8">
+              <label className="block text-lg font-semibold mb-2">Select Day:</label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={currentDay}
+                onChange={(e) => setCurrentDay(e.target.value)}
+              >
+                {dates.map(day => (
+                  <option key={day.date} value={day.date}>
+                    {day.label} ({day.date})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mb-8">
+              <label className="block text-lg font-semibold mb-2">Is {currentLine} Running?</label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={data[currentLine].running[currentDay] || 'No'}
+                onChange={(e) => handleRunningChange(e.target.value)}
+              >
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+                <option value="N/A">N/A</option>
+              </select>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">
+                  {currentLine} - Head Status ({currentDay})
+                </h2>
+                <button
+                  className="bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-600"
+                  onClick={handleSaveToHistory}
+                >
+                  Save to History
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full bg-white">
+                  <thead>
+                    <tr className="bg-gray-200">
+                      <th className="px-4 py-2 text-left">Head</th>
+                      <th className="px-4 py-2 text-left">Offline Status</th>
+                      <th className="px-4 py-2 text-left">Issue Type</th>
+                      <th className="px-4 py-2 text-left">Repaired</th>
+                      <th className="px-4 py-2 text-left">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data[currentLine][currentDay]?.heads || defaultHeadData).map((head, index) => (
+                      <tr
+                        key={`head-${head.head}-${currentLine}-${currentDay}`}
+                        className={`border-t ${getHeadRowColor(head)}`}
+                      >
+                        <td className="px-4 py-2">{head.head}</td>
+                        <td className="px-4 py-2">
+                          <select
+                            className="w-full p-1 border rounded-md bg-white text-black"
+                            value={head.offline}
+                            onChange={(e) => handleDropdownChange(index, 'offline', e.target.value)}
+                          >
+                            <option value="Active">Active</option>
+                            <option value="Offline">Offline</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-2">
+                          <select
+                            className="w-full p-1 border rounded-md bg-white text-black"
+                            value={head.issue}
+                            onChange={(e) => handleDropdownChange(index, 'issue', e.target.value)}
+                            disabled={head.offline !== 'Offline'}
+                          >
+                            {issueTypes.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-2">
+                          <select
+                            className="w-full p-1 border rounded-md bg-white text-black"
+                            value={head.repaired}
+                            onChange={(e) => handleDropdownChange(index, 'repaired', e.target.value)}
+                            disabled={head.offline !== 'Offline' || head.issue === 'None'}
+                          >
+                            <option value="N/A">N/A</option>
+                            <option value="Fixed">Fixed</option>
+                            <option value="Not Fixed">Not Fixed</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="text"
+                            className="w-full p-1 border rounded-md bg-white text-black"
+                            defaultValue={head.notes || ''}
+                            ref={textareaRefs.current[index]}
+                            maxLength="200"
+                            placeholder="Notes (max 200 chars)"
+                            disabled={head.offline !== 'Offline'}
+                            onBlur={(e) => {
+                              console.log(`Notes blur: head=${head.head}, value=${e.target.value}`);
+                              handleDropdownChange(index, 'notes', e.target.value);
+                            }}
+                            onTouchStart={(e) => {
+                              console.log(`Notes touch: head=${head.head}`);
+                              e.target.focus();
+                            }}
+                            onClick={(e) => {
+                              console.log(`Notes click: head=${head.head}`);
+                              e.target.focus();
+                            }}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            {(head.notes || '').length}/200
+                          </p>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <h2 className="text-xl font-semibold mb-4">Heads Down Per Day ({currentLine})</h2>
+              <Recharts.ResponsiveContainer width="100%" height={300}>
+                <Recharts.BarChart data={totalHeadsDownPerDay}>
+                  <Recharts.CartesianGrid strokeDasharray="3 3" />
+                  <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
+                  <Recharts.YAxis
+                    label={{ value: 'Heads Down', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                    style={{ fontSize: 12 }}
+                  />
+                  <Recharts.Tooltip />
+                  <Recharts.Legend />
+                  <Recharts.Bar dataKey="heads" fill="#3b82f6" />
+                </Recharts.BarChart>
+              </Recharts.ResponsiveContainer>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <h2 className="text-xl font-semibold mb-4">Issue Distribution (All Lines)</h2>
+              <Recharts.ResponsiveContainer width="100%" height={300}>
+                <Recharts.PieChart>
+                  <Recharts.Pie
+                    data={issueCounts}
+                    dataKey="count"
+                    nameKey="issue"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    fill="#10b981"
+                    label
+                    style={{ fontSize: 12 }}
+                  >
+                    {issueCounts.map((entry, index) => (
+                      <Recharts.Cell key={`cell-${index}`} fill={['#10b981', '#ef4444', '#f59e0b'][index % 3]} />
+                    ))}
+                  </Recharts.Pie>
+                  <Recharts.Tooltip />
+                  <Recharts.Legend />
+                </Recharts.PieChart>
+              </Recharts.ResponsiveContainer>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-md">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Summary</h2>
+                <div className="flex flex-wrap gap-2">
+                  {dates.map(day => (
+                    <button
+                      key={day.label}
+                      className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600"
+                      onClick={() => setSummaryDay(day.label)}
+                    >
+                      {day.label} Offline Summary
+                    </button>
+                  ))}
+                  <button
+                    className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+                    onClick={exportToCSV}
+                  >
+                    Export to CSV
+                  </button>
+                  <button
+                    className="bg-purple-500 text-white px-4 py-2 rounded-md hover:bg-purple-600"
+                    onClick={exportToPDF}
+                  >
+                    Download PDF Report
+                  </button>
+                </div>
+              </div>
+              <p className="text-gray-600">
+                Total heads down across all lines and days: {totalHeadsDown}.<br />
+                Issues recorded: {issueCounts.map(ic => `${ic.issue}: ${ic.count}`).join(', ') || 'None'}.<br />
+                Active lines with downtime: {activeLines.length > 0 ? activeLines.join(', ') : 'None'}.<br />
+                {activeLines.length > 0
+                  ? `Downtime is recorded across ${activeLines.length} line(s). Update statuses using the dropdowns to log new issues.`
+                  : `No downtime recorded. Update statuses using the dropdowns to log issues.`}
+              </p>
+            </div>
+
+            {summaryDay && <DaySummaryModal dayLabel={summaryDay} />}
+          </div>
+        );
+      };
 
       if (loading) {
         return (
@@ -1321,21 +1379,21 @@
               Manufacturing Downtime Logger
             </h1>
 
-            <div className="flex mb-8">
+            <div className="flex flex-wrap mb-8 gap-2">
               <button
-                className={`px-4 py-2 mr-2 rounded-md ${currentPage === 'main' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                className={`px-4 py-2 rounded-md ${currentPage === 'main' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
                 onClick={() => setCurrentPage('main')}
               >
                 Main Logger
               </button>
               <button
-                className={`px-4 py-2 mr-2 rounded-md ${currentPage === 'summary' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                className={`px-4 py-2 rounded-md ${currentPage === 'summary' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
                 onClick={() => setCurrentPage('summary')}
               >
                 Summary Page
               </button>
               <button
-                className={`px-4 py-2 mr-2 rounded-md ${currentPage === 'dashboard' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                className={`px-4 py-2 rounded-md ${currentPage === 'dashboard' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
                 onClick={() => setCurrentPage('dashboard')}
               >
                 Dashboard
@@ -1346,9 +1404,15 @@
               >
                 History Log
               </button>
+              <button
+                className={`px-4 py-2 rounded-md ${currentPage === 'runningHeads' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                onClick={() => setCurrentPage('runningHeads')}
+              >
+                Running Heads
+              </button>
             </div>
 
-            {currentPage === 'main' ? <MainPage /> : currentPage === 'dashboard' ? <DashboardPage /> : currentPage === 'history' ? <HistoryPage /> : <SummaryPage />}
+            {currentPage === 'main' ? <MainPage /> : currentPage === 'dashboard' ? <DashboardPage /> : currentPage === 'history' ? <HistoryPage /> : currentPage === 'runningHeads' ? <RunningLinesHeadsPage /> : <SummaryPage />}
           </div>
         </ErrorBoundary>
       );
