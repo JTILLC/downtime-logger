@@ -736,6 +736,12 @@
           return 'bg-red-500 text-white';
         };
 
+        const handleHeadBlockClick = (lineName) => {
+          setCurrentLine(lineName);
+          setCurrentDay(selectedDashboardDay);
+          setCurrentPage('main');
+        };
+
         const runningLines = lines.filter(line => {
           return data[line.name]?.running?.[selectedDashboardDay] === 'Yes';
         });
@@ -771,7 +777,9 @@
                       {(data[line.name][selectedDashboardDay]?.heads || defaultHeadData).map(head => (
                         <div
                           key={head.head}
-                          className={`w-12 h-12 flex items-center justify-center rounded-md text-sm font-semibold ${getHeadBlockColor(head)}`}
+                          className={`w-12 h-12 flex items-center justify-center rounded-md text-sm font-semibold ${getHeadBlockColor(head)} cursor-pointer hover:opacity-80`}
+                          onClick={() => handleHeadBlockClick(line.name)}
+                          onTouchStart={() => handleHeadBlockClick(line.name)}
                         >
                           {head.head}
                         </div>
@@ -788,7 +796,7 @@
       const DashboardPage = () => {
         const isLineRunning = (line, day) => {
           console.log(`Checking isLineRunning for ${line.name}, day=${day}`);
-          if (selectedDashboardDay === 'All Days') {
+          if (day === 'All Days') {
             const isRunning = dates.some(d => {
               const status = data[line.name]?.running?.[d.date] || 'No';
               console.log(`  Day ${d.date}: status=${status}`);
@@ -800,6 +808,28 @@
           const status = data[line.name]?.running?.[day] || 'No';
           console.log(`  Specific day ${day} for ${line.name}: status=${status}`);
           return status === 'Yes';
+        };
+
+        const getLineEfficiency = (line, day) => {
+          try {
+            let selectedDay = day;
+            if (day === 'All Days') {
+              const runningDay = dates.find(d => data[line.name]?.running?.[d.date] === 'Yes');
+              selectedDay = runningDay ? runningDay.date : dates[0].date;
+            }
+            const heads = data[line.name]?.[selectedDay]?.heads || defaultHeadData;
+            if (!heads || !Array.isArray(heads)) {
+              console.warn(`No valid heads data for ${line.name} on ${selectedDay}, using default`);
+              return (0).toFixed(2);
+            }
+            const activeHeads = heads.filter(head => head.offline === 'Active').length;
+            const efficiency = (activeHeads / 14 * 100).toFixed(2);
+            console.log(`Efficiency for ${line.name} on ${selectedDay}: ${efficiency}%`);
+            return efficiency;
+          } catch (e) {
+            console.error(`Error calculating efficiency for ${line.name}:`, e);
+            return (0).toFixed(2);
+          }
         };
 
         console.log('Dashboard data:', JSON.stringify(data, null, 2));
@@ -827,19 +857,22 @@
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {lines.map(line => (
-                  <div
-                    key={line.name}
-                    className={`p-4 rounded-md ${
-                      isLineRunning(line, selectedDashboardDay)
-                        ? 'bg-green-500 text-white'
-                        : 'bg-gray-200 text-black'
-                    }`}
-                  >
-                    <p className="font-semibold">{line.section}: {line.name}</p>
-                    <p>Status: {isLineRunning(line, selectedDashboardDay) ? 'Running' : 'Not Running'}</p>
-                  </div>
-                ))}
+                {lines.map(line => {
+                  const isRunning = isLineRunning(line, selectedDashboardDay);
+                  const efficiency = getLineEfficiency(line, selectedDashboardDay);
+                  return (
+                    <div
+                      key={line.name}
+                      className={`p-4 rounded-md ${
+                        isRunning ? 'bg-green-500 text-white' : 'bg-gray-200 text-black'
+                      }`}
+                    >
+                      <p className="font-semibold">{line.section}: {line.name}</p>
+                      <p>Status: {isRunning ? 'Running' : 'Not Running'}</p>
+                      <p className="text-sm">Efficiency: {efficiency}%</p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="bg-white p-6 rounded-lg shadow-md mb-8">
