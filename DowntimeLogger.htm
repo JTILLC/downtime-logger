@@ -104,15 +104,15 @@
       { name: 'Line 17', section: 'Hand Kettle' }, { name: 'Line 18', section: 'Hand Kettle' },
       { name: 'Line 19', section: 'Hand Kettle' }, { name: 'Line 20', section: 'Hand Kettle' },
       { name: 'Line 21', section: 'Hand Kettle' }, { name: 'Line 22', section: 'Hand Kettle' },
-      { name: 'Line 23', section: 'Hand Kettle' },
-      { name: 'Line 24', section: 'Twin Screw' }, { name: 'Line 25', section: 'Twin Screw' },
-      { name: 'Line 26', section: 'Twin Screw' }, { name: 'Line 27', section: 'Twin Screw' },
-      { name: 'Line 28', section: 'Twin Screw' }, { name: 'Line 29', section: 'Twin Screw' },
-      { name: 'Line 30', section: 'Twin Screw' }, { name: 'Line 31', section: 'Twin Screw' },
-      { name: 'Line 32', section: 'Sheeted 1' }, { name: 'Line 33', section: 'Sheeted 1' },
-      { name: 'Line 34', section: 'Sheeted 1' }, { name: 'Line 35', section: 'Sheeted 1' },
-      { name: 'Line 36', section: 'Sheeted 1' }, { name: 'Line 37', section: 'Sheeted 1' },
-      { name: 'Line 38', section: 'Sheeted 2' }, { name: 'Line 39', section: 'Sheeted 2' }
+      { name: 'Line 23', section: 'Hand Kettle' }, { name: 'Line 24', section: 'Twin Screw' },
+      { name: 'Line 25', section: 'Twin Screw' }, { name: 'Line 26', section: 'Twin Screw' },
+      { name: 'Line 27', section: 'Twin Screw' }, { name: 'Line 28', section: 'Twin Screw' },
+      { name: 'Line 29', section: 'Twin Screw' }, { name: 'Line 30', section: 'Twin Screw' },
+      { name: 'Line 31', section: 'Twin Screw' }, { name: 'Line 32', section: 'Sheeted 1' },
+      { name: 'Line 33', section: 'Sheeted 1' }, { name: 'Line 34', section: 'Sheeted 1' },
+      { name: 'Line 35', section: 'Sheeted 1' }, { name: 'Line 36', section: 'Sheeted 1' },
+      { name: 'Line 37', section: 'Sheeted 1' }, { name: 'Line 38', section: 'Sheeted 2' },
+      { name: 'Line 39', section: 'Sheeted 2' }
     ];
 
     const defaultHeadData = Array(14).fill().map((_, i) => ({
@@ -270,9 +270,28 @@
               }
 
               const newData = JSON.parse(JSON.stringify(initialData));
-              const newDates = [...initialDates];
-              const uniqueDates = new Set(initialDates.map(d => d.date));
+              const csvDates = new Set();
 
+              // Collect unique dates from CSV
+              parsed.data.forEach(row => {
+                const date = row.Date;
+                if (date && !csvDates.has(date)) {
+                  csvDates.add(date);
+                }
+              });
+
+              // Sort dates and take up to 5 to map to Day 1 through Day 5
+              const sortedCsvDates = Array.from(csvDates).sort();
+              const newDates = initialDates.map((day, index) => {
+                const newDate = sortedCsvDates[index] || day.date;
+                return {
+                  id: day.id,
+                  date: newDate,
+                  label: day.label
+                };
+              });
+
+              // Process CSV data
               parsed.data.forEach(row => {
                 const lineName = row.Line;
                 if (!lines.some(l => l.name === lineName)) {
@@ -281,10 +300,9 @@
                 }
 
                 const date = row.Date;
-                if (!uniqueDates.has(date)) {
-                  uniqueDates.add(date);
-                  const dayNum = newDates.length + 1;
-                  newDates.push({ id: `day${dayNum}`, date, label: `Day ${dayNum}` });
+                if (!newDates.some(d => d.date === date)) {
+                  console.warn(`Skipping date not in top 5: ${date}`);
+                  return;
                 }
 
                 newData[lineName].running[date] = row.Running || 'No';
@@ -502,6 +520,44 @@
         }
       };
 
+      const handleSaveAllToHistory = () => {
+        console.log('Saving all lines to history');
+        try {
+          let hasOfflineHeads = false;
+          lines.forEach(line => {
+            const heads = data[line.name][currentDay]?.heads || defaultHeadData;
+            const offlineHeads = heads.filter(head => head.offline === 'Offline');
+            if (offlineHeads.length > 0) {
+              hasOfflineHeads = true;
+              offlineHeads.forEach(head => {
+                const entry = {
+                  line: line.name,
+                  date: currentDay,
+                  head: head.head,
+                  offline: head.offline,
+                  issue: head.issue,
+                  repaired: head.repaired,
+                  notes: head.notes || '',
+                  change: `Head ${head.head} status updated`
+                };
+                addToHistoryLog(entry);
+              });
+            }
+          });
+
+          pendingHistoryUpdates.current = {};
+
+          if (!hasOfflineHeads) {
+            setError('No offline heads to save to history across all lines.');
+          } else {
+            setError(null);
+          }
+        } catch (e) {
+          console.error('handleSaveAllToHistory error:', e);
+          setError('Failed to save all to history. Please try again.');
+        }
+      };
+
       const handleRunningChange = (value) => {
         console.log(`handleRunningChange: line=${currentLine}, day=${currentDay}, value=${value}`);
         try {
@@ -520,32 +576,17 @@
       };
 
       const handleReset = () => {
-        console.log('Attempting to reset to defaults');
+        console.log('Resetting to defaults');
         try {
-          if (!window.confirm) {
-            console.warn('window.confirm not available, falling back to alert');
-            alert('Reset not supported in this environment. Please confirm manually.');
-            return;
-          }
-          const confirmed = window.confirm('Are you sure you want to reset all data? This action cannot be undone.');
-          console.log('Reset confirmation result:', confirmed);
-          if (confirmed) {
-            if (!initialData || !initialDates) {
-              throw new Error('Initial data or dates not defined');
-            }
-            setData(JSON.parse(JSON.stringify(initialData)));
-            setDates([...initialDates]);
-            setHistoryLog([]);
-            setCurrentLine('Line 1');
-            setCurrentDay('2025-04-13');
-            setError(null);
-            console.log('Reset to defaults completed');
-          } else {
-            console.log('Reset canceled by user');
-          }
+          setData(JSON.parse(JSON.stringify(initialData)));
+          setDates([...initialDates]);
+          setHistoryLog([]);
+          setCurrentLine('Line 1');
+          setCurrentDay('2025-04-13');
+          setError(null);
         } catch (e) {
           console.error('handleReset error:', e);
-          setError('Failed to reset data: ' + e.message);
+          setError('Failed to reset data. Please try again.');
         }
       };
 
@@ -1233,12 +1274,20 @@
                 <h2 className="text-xl font-semibold">
                   {currentLine} - Head Status ({currentDay})
                 </h2>
-                <button
-                  className="bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-600"
-                  onClick={handleSaveToHistory}
-                >
-                  Save to History
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    className="bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-600"
+                    onClick={handleSaveToHistory}
+                  >
+                    Save to History
+                  </button>
+                  <button
+                    className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600"
+                    onClick={handleSaveAllToHistory}
+                  >
+                    Save All to History
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full bg-white">
@@ -1480,5 +1529,6 @@
       document.getElementById('error-message').textContent = 'Failed to load app: ' + e.message + '. Please check console and refresh.';
     }
   </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9326f3a7ae53677b',t:'MTc0NTAwODU1OS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
 </body>
 </html>
