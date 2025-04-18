@@ -9,24 +9,30 @@
   <style type="text/css">
     p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
     p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
+    body { background-color: #f3f4f6; font-family: Arial, sans-serif; }
   </style>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-  <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.3/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js" onerror="console.error('Failed to load PropTypes')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="console.error('Failed to load React')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" onerror="console.error('Failed to load ReactDOM')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js" onerror="console.error('Failed to load Babel')"></script>
+  <script src="https://unpkg.com/papaparse@latest/papaparse.min.js" onerror="console.error('Failed to load PapaParse')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js" onerror="console.error('Failed to load Recharts')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" onerror="console.error('Failed to load XLSX')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" onerror="console.error('Failed to load jsPDF')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.3/jspdf.plugin.autotable.min.js" onerror="console.error('Failed to load jsPDF AutoTable')"></script>
 </head>
 <body class="bg-gray-100 font-sans">
   <div id="root" class="container mx-auto p-4"></div>
+  <div id="error-container" style="display: none; text-align: center; color: red; padding: 20px;">
+    <h2>Application Failed to Load</h2>
+    <p id="error-message">An error occurred. Please check the console for details and refresh.</p>
+  </div>
 
   <script type="text/javascript">
+    console.log('Starting JTI Downtime Logger initialization');
     var gk_isXlsx = false;
     var gk_xlsxFileLookup = {};
     var gk_fileData = {};
@@ -52,12 +58,14 @@
   </script>
 
   <script type="text/babel">
+    console.log('Loading React app');
     const { useState, useEffect, useRef } = React;
 
     class ErrorBoundary extends React.Component {
       state = { hasError: false, error: null };
 
       static getDerivedStateFromError(error) {
+        console.error('ErrorBoundary caught:', error);
         return { hasError: true, error };
       }
 
@@ -66,10 +74,13 @@
           return (
             <div className="text-center text-red-600 p-4">
               <h2 className="text-xl font-semibold">Something went wrong!</h2>
-              <p>{this.state.error?.message || 'Unknown error'}</p>
+              <p>{this.state.error?.message || 'Unknown error. Check console for details.'}</p>
               <button
                 className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-md"
-                onClick={() => this.setState({ hasError: false, error: null })}
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.reload();
+                }}
               >
                 Try Again
               </button>
@@ -139,6 +150,7 @@
     }, {});
 
     const App = () => {
+      console.log('Initializing App component');
       const [data, setData] = useState(() => {
         try {
           const savedData = localStorage.getItem('downtimeLoggerData');
@@ -206,6 +218,7 @@
       }, [historyLog]);
 
       useEffect(() => {
+        console.log('Setting loading state to false');
         setTimeout(() => {
           setLoading(false);
         }, 500);
@@ -222,17 +235,16 @@
         'Installed Wrong'
       ];
 
-      const excelDateToJSDate = (serial) => {
-        const utc_days = Math.floor(serial - 25569);
-        const date = new Date(utc_days * 86400 * 1000);
-        return date.toISOString().split('T')[0];
-      };
-
       const handleFileImport = async (event) => {
+        console.log('Starting CSV import');
         try {
           const file = event.target.files[0];
           if (!file) {
             setError('No file selected.');
+            return;
+          }
+          if (!file.name.endsWith('.csv')) {
+            setError('Please select a CSV file.');
             return;
           }
 
@@ -240,96 +252,67 @@
           const reader = new FileReader();
           reader.onload = async (e) => {
             try {
-              const arrayBuffer = e.target.result;
-              const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-              const sheet = workbook.Sheets[workbook.SheetNames[0]];
-              const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' });
+              const text = e.target.result;
+              const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+              if (parsed.errors.length > 0) {
+                throw new Error('Failed to parse CSV: ' + parsed.errors[0].message);
+              }
+
+              const expectedHeaders = [
+                'Line', 'Section', 'Date', 'Running',
+                ...Array.from({ length: 14 }, (_, i) => [
+                  `Head${i + 1}_Offline`, `Head${i + 1}_Issue`, `Head${i + 1}_Repaired`, `Head${i + 1}_Notes`
+                ]).flat()
+              ];
+              const headers = parsed.meta.fields;
+              if (!headers || !expectedHeaders.every(h => headers.includes(h))) {
+                throw new Error('Invalid CSV format. Expected headers: ' + expectedHeaders.join(', '));
+              }
 
               const newData = JSON.parse(JSON.stringify(initialData));
-              const excelDates = ['45755', '45757', '45758', '45762', '45764'];
-              const dateMap = {
-                '45755': '2025-04-13',
-                '45757': '2025-04-14',
-                '45758': '2025-04-15',
-                '45762': '2025-04-16',
-                '45764': '2025-04-17'
-              };
+              const newDates = [...initialDates];
+              const uniqueDates = new Set(initialDates.map(d => d.date));
 
-              const runData = {};
-              for (let row = 0; row < jsonData.length; row++) {
-                if (jsonData[row][0]?.startsWith('Line')) {
-                  const line = jsonData[row][0];
-                  if (lines.some(l => l.name === line)) {
-                    runData[line] = {};
-                    for (let i = 0; i < excelDates.length; i++) {
-                      const date = dateMap[excelDates[i]];
-                      const status = jsonData[row][i + 1];
-                      runData[line][date] = status === 'Running' ? 'Yes' : 'No';
-                    }
-                  }
+              parsed.data.forEach(row => {
+                const lineName = row.Line;
+                if (!lines.some(l => l.name === lineName)) {
+                  console.warn(`Skipping unknown line: ${lineName}`);
+                  return;
                 }
-              }
 
-              let currentLine = null;
-              let currentDay = null;
-              const headData = {};
-              for (let row = 0; row < jsonData.length; row++) {
-                const firstCell = jsonData[row][0]?.toString().trim();
-                if (firstCell?.startsWith('Line')) {
-                  currentLine = firstCell;
-                  headData[currentLine] = headData[currentLine] || {};
-                } else if (firstCell?.startsWith('DAY')) {
-                  const dayMatch = firstCell.match(/DAY\s+(\d+)\s+(\d+)/);
-                  if (dayMatch) {
-                    currentDay = dateMap[dayMatch[2]];
-                    headData[currentLine][currentDay] = headData[currentLine][currentDay] || { heads: [...defaultHeadData] };
-                  }
-                } else if (firstCell === 'Head' && currentLine && currentDay) {
-                  const dayRows = [6, 13, 20, 27, 34].map(r => r - 6);
-                  const currentRowIndex = row;
-                  const dayIndex = dayRows.findIndex(r => {
-                    const expectedRow = jsonData.findIndex((r, i) => i >= currentRowIndex && r[0] === 'Head' && i === currentRowIndex);
-                    return expectedRow === currentRowIndex;
-                  });
-                  if (dayIndex !== -1 && dateMap[excelDates[dayIndex]]) {
-                    currentDay = dateMap[excelDates[dayIndex]];
-                    headData[currentLine][currentDay] = headData[currentLine][currentDay] || { heads: [...defaultHeadData] };
-                    const heads = jsonData[row].slice(1, 15).map((val, idx) => ({
-                      head: idx + 1,
-                      offline: val === 'X' ? 'Offline' : 'Active',
-                      issue: 'None',
-                      repaired: val === 'X' ? 'N/A' : 'N/A',
-                      notes: ''
-                    }));
-                    headData[currentLine][currentDay].heads = heads;
-                  }
+                const date = row.Date;
+                if (!uniqueDates.has(date)) {
+                  uniqueDates.add(date);
+                  const dayNum = newDates.length + 1;
+                  newDates.push({ id: `day${dayNum}`, date, label: `Day ${dayNum}` });
                 }
-              }
 
-              Object.keys(newData).forEach(line => {
-                if (runData[line]) {
-                  newData[line].running = { ...newData[line].running, ...runData[line] };
-                }
-              });
+                newData[lineName].running[date] = row.Running || 'No';
+                newData[lineName][date] = { heads: [...defaultHeadData] };
 
-              Object.keys(headData).forEach(line => {
-                if (newData[line]) {
-                  Object.keys(headData[line]).forEach(date => {
-                    newData[line][date] = headData[line][date];
-                  });
+                for (let i = 1; i <= 14; i++) {
+                  newData[lineName][date].heads[i - 1] = {
+                    head: i,
+                    offline: row[`Head${i}_Offline`] || 'Active',
+                    issue: row[`Head${i}_Issue`] || 'None',
+                    repaired: row[`Head${i}_Repaired`] || 'N/A',
+                    notes: row[`Head${i}_Notes`] || ''
+                  };
                 }
               });
 
               setData(newData);
+              setDates(newDates);
               setError(null);
-              setLoading(false);
+              console.log('CSV import successful');
             } catch (err) {
-              console.error('File parsing error:', err);
-              setError('Failed to parse Excel file. Ensure it matches the expected format.');
+              console.error('CSV parsing error:', err);
+              setError('Failed to import CSV: ' + err.message);
+            } finally {
               setLoading(false);
             }
           };
-          reader.readAsArrayBuffer(file);
+          reader.readAsText(file);
         } catch (err) {
           console.error('File import error:', err);
           setError('Failed to import file. Please try again.');
@@ -338,6 +321,7 @@
       };
 
       const handleDateChange = (dayId, newDate) => {
+        console.log(`Changing date for ${dayId} to ${newDate}`);
         try {
           if (!newDate || newDate === '') {
             setError('Please select a valid date.');
@@ -382,6 +366,7 @@
       };
 
       const addToHistoryLog = (entry) => {
+        console.log('Adding to history log:', entry);
         setHistoryLog(prev => [
           ...prev,
           {
@@ -393,10 +378,12 @@
       };
 
       const deleteHistoryItem = (id) => {
+        console.log('Deleting history item:', id);
         setHistoryLog(prev => prev.filter(entry => entry.id !== id));
       };
 
       const handleClearHistory = () => {
+        console.log('Clearing history');
         try {
           if (window.confirm('Are you sure you want to clear all history entries? This action cannot be undone.')) {
             setHistoryLog([]);
@@ -409,6 +396,7 @@
       };
 
       const handleExportHistoryToCSV = () => {
+        console.log('Exporting history to CSV');
         try {
           const filteredHistoryLog = historyLog.filter(entry => {
             const matchesLine = selectedHistoryLine === 'All Lines' || entry.line === selectedHistoryLine;
@@ -482,6 +470,7 @@
       };
 
       const handleSaveToHistory = () => {
+        console.log('Saving to history');
         try {
           const heads = data[currentLine][currentDay]?.heads || defaultHeadData;
           const offlineHeads = heads.filter(head => head.offline === 'Offline');
@@ -514,8 +503,8 @@
       };
 
       const handleRunningChange = (value) => {
+        console.log(`handleRunningChange: line=${currentLine}, day=${currentDay}, value=${value}`);
         try {
-          console.log(`handleRunningChange: line=${currentLine}, day=${currentDay}, value=${value}`);
           setData(prev => {
             const newData = { ...prev };
             const lineData = { ...newData[currentLine], running: { ...newData[currentLine].running } };
@@ -531,6 +520,7 @@
       };
 
       const handleReset = () => {
+        console.log('Resetting to defaults');
         try {
           setData(JSON.parse(JSON.stringify(initialData)));
           setDates([...initialDates]);
@@ -545,6 +535,7 @@
       };
 
       const exportToCSV = () => {
+        console.log('Exporting to CSV');
         try {
           const csvData = [];
           csvData.push(['Line', 'Section', 'Date', 'Running', ...Array.from({ length: 14 }, (_, i) => [
@@ -581,6 +572,7 @@
       };
 
       const exportToPDF = () => {
+        console.log('Exporting to PDF');
         try {
           const { jsPDF } = window.jspdf;
           const doc = new jsPDF();
@@ -658,6 +650,7 @@
       });
 
       const DaySummaryModal = ({ dayLabel }) => {
+        console.log(`Rendering DaySummaryModal for ${dayLabel}`);
         const day = dates.find(d => d.label === dayLabel);
         if (!day) return null;
 
@@ -726,6 +719,7 @@
       };
 
       const RunningLinesHeadsPage = () => {
+        console.log('Rendering RunningLinesHeadsPage');
         const getHeadBlockColor = (head) => {
           if (head.offline === 'Active') {
             return 'bg-green-500 text-white';
@@ -737,6 +731,7 @@
         };
 
         const handleHeadBlockClick = (lineName) => {
+          console.log(`Navigating to Main Logger for ${lineName}`);
           setCurrentLine(lineName);
           setCurrentDay(selectedDashboardDay);
           setCurrentPage('main');
@@ -794,6 +789,7 @@
       };
 
       const DashboardPage = () => {
+        console.log('Rendering DashboardPage');
         const isLineRunning = (line, day) => {
           console.log(`Checking isLineRunning for ${line.name}, day=${day}`);
           if (day === 'All Days') {
@@ -919,78 +915,82 @@
         );
       };
 
-      const SummaryPage = () => (
-        <div>
-          <h2 className="text-2xl font-semibold mb-6">Summary</h2>
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <div className="flex flex-wrap gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Select Day for Offline Summary</label>
-                <select
-                  className="w-full p-2 border rounded-md"
-                  value={selectedSummaryDay}
-                  onChange={(e) => setSelectedSummaryDay(e.target.value)}
-                >
-                  <option value="All Days">All Days</option>
-                  {dates.map(day => (
-                    <option key={day.date} value={day.label}>{day.label}</option>
-                  ))}
-                </select>
+      const SummaryPage = () => {
+        console.log('Rendering SummaryPage');
+        return (
+          <div>
+            <h2 className="text-2xl font-semibold mb-6">Summary</h2>
+            <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+              <div className="flex flex-wrap gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Select Day for Offline Summary</label>
+                  <select
+                    className="w-full p-2 border rounded-md"
+                    value={selectedSummaryDay}
+                    onChange={(e) => setSelectedSummaryDay(e.target.value)}
+                  >
+                    <option value="All Days">All Days</option>
+                    {dates.map(day => (
+                      <option key={day.date} value={day.label}>{day.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Select Issue Type</label>
+                  <select
+                    className="w-full p-2 border rounded-md"
+                    value={selectedIssueType}
+                    onChange={(e) => setSelectedIssueType(e.target.value)}
+                  >
+                    <option value="All Issues">All Issues</option>
+                    {issueTypes.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Select Issue Type</label>
-                <select
-                  className="w-full p-2 border rounded-md"
-                  value={selectedIssueType}
-                  onChange={(e) => setSelectedIssueType(e.target.value)}
-                >
-                  <option value="All Issues">All Issues</option>
-                  {issueTypes.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
+              <div className="overflow-x-auto">
+                <table className="min-w-full bg-white">
+                  <thead>
+                    <tr className="bg-gray-200">
+                      <th className="px-4 py-2 text-left">Line</th>
+                      <th className="px-4 py-2 text-left">Section</th>
+                      <th className="px-4 py-2 text-left">Date</th>
+                      <th className="px-4 py-2 text-left">Offline Heads</th>
+                      <th className="px-4 py-2 text-left">Issues</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map(line => {
+                      return dates
+                        .filter(day => selectedSummaryDay === 'All Days' || day.label === selectedSummaryDay)
+                        .map(day => {
+                          const heads = data[line.name][day.date]?.heads || defaultHeadData;
+                          const offlineHeads = heads.filter(head => head.offline === 'Offline');
+                          const issues = offlineHeads
+                            .filter(head => selectedIssueType === 'All Issues' || head.issue === selectedIssueType)
+                            .map(head => `Head ${head.head}: ${head.issue} (${head.repaired})`);
+                          return (
+                            <tr key={`${line.name}-${day.date}`} className="border-t">
+                              <td className="px-4 py-2">{line.name}</td>
+                              <td className="px-4 py-2">{line.section}</td>
+                              <td className="px-4 py-2">{day.date}</td>
+                              <td className="px-4 py-2">{offlineHeads.length > 0 ? offlineHeads.map(h => h.head).join(', ') : 'None'}</td>
+                              <td className="px-4 py-2">{issues.length > 0 ? issues.join('; ') : 'None'}</td>
+                            </tr>
+                          );
+                        });
+                    })}
+                  </tbody>
+                </table>
               </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-white">
-                <thead>
-                  <tr className="bg-gray-200">
-                    <th className="px-4 py-2 text-left">Line</th>
-                    <th className="px-4 py-2 text-left">Section</th>
-                    <th className="px-4 py-2 text-left">Date</th>
-                    <th className="px-4 py-2 text-left">Offline Heads</th>
-                    <th className="px-4 py-2 text-left">Issues</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map(line => {
-                    return dates
-                      .filter(day => selectedSummaryDay === 'All Days' || day.label === selectedSummaryDay)
-                      .map(day => {
-                        const heads = data[line.name][day.date]?.heads || defaultHeadData;
-                        const offlineHeads = heads.filter(head => head.offline === 'Offline');
-                        const issues = offlineHeads
-                          .filter(head => selectedIssueType === 'All Issues' || head.issue === selectedIssueType)
-                          .map(head => `Head ${head.head}: ${head.issue} (${head.repaired})`);
-                        return (
-                          <tr key={`${line.name}-${day.date}`} className="border-t">
-                            <td className="px-4 py-2">{line.name}</td>
-                            <td className="px-4 py-2">{line.section}</td>
-                            <td className="px-4 py-2">{day.date}</td>
-                            <td className="px-4 py-2">{offlineHeads.length > 0 ? offlineHeads.map(h => h.head).join(', ') : 'None'}</td>
-                            <td className="px-4 py-2">{issues.length > 0 ? issues.join('; ') : 'None'}</td>
-                          </tr>
-                        );
-                      });
-                  })}
-                </tbody>
-              </table>
             </div>
           </div>
-        </div>
-      );
+        );
+      };
 
       const HistoryPage = () => {
+        console.log('Rendering HistoryPage');
         const filteredHistoryLog = historyLog.filter(entry => {
           const matchesLine = selectedHistoryLine === 'All Lines' || entry.line === selectedHistoryLine;
           const matchesHead = selectedHistoryHead === 'All Heads' || entry.head.toString() === selectedHistoryHead;
@@ -1113,6 +1113,7 @@
       };
 
       const MainPage = () => {
+        console.log('Rendering MainPage');
         const getHeadRowColor = (head) => {
           if (head.offline === 'Active') {
             return 'bg-green-500 text-white';
@@ -1160,12 +1161,12 @@
               <h2 className="text-xl font-semibold mb-4">Import Data</h2>
               <input
                 type="file"
-                accept=".csv,.xlsx"
+                accept=".csv"
                 className="w-full p-2 border rounded-md"
                 onChange={handleFileImport}
               />
               <p className="text-sm text-gray-500 mt-2">
-                Upload a CSV/XLSX file with columns: Line, Section, Date, Running, Head1_Offline, Head1_Issue, Head1_Repaired, Head1_Notes, ..., Head14_Notes
+                Upload the exported downtime_log.csv to sync data across devices.
               </p>
             </div>
 
@@ -1394,6 +1395,7 @@
       };
 
       if (loading) {
+        console.log('Showing loading screen');
         return (
           <div className="text-center text-2xl font-semibold text-gray-600 mt-10">
             Loading data...
@@ -1401,6 +1403,7 @@
         );
       }
 
+      console.log('Rendering main app');
       return (
         <ErrorBoundary>
           <div className="max-w-7xl mx-auto">
@@ -1448,11 +1451,18 @@
     };
 
     try {
+      console.log('Attempting to render root');
+      if (!window.React || !window.ReactDOM) {
+        throw new Error('React or ReactDOM not loaded');
+      }
       const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<App />);
+      console.log('Root rendered successfully');
     } catch (e) {
       console.error('Root render error:', e);
-      document.getElementById('root').innerHTML = '<div className="text-center text-red-600 p-4">Failed to load app. Please refresh and try again.</div>';
+      document.getElementById('root').style.display = 'none';
+      document.getElementById('error-container').style.display = 'block';
+      document.getElementById('error-message').textContent = 'Failed to load app: ' + e.message + '. Please check console and refresh.';
     }
   </script>
 </body>
