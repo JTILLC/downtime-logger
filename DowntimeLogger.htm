@@ -3,7 +3,7 @@
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
   <meta http-equiv="Content-Style-Type" content="text/css">
-  <title>Downtime Logger</title>
+  <title>JTI Downtime Logger</title>
   <meta name="Generator" content="Cocoa HTML Writer">
   <meta name="CocoaVersion" content="2575.5">
   <style type="text/css">
@@ -86,7 +86,7 @@
       { name: 'Line 5', section: 'PC Line' }, { name: 'Line 6', section: 'PC Line' },
       { name: 'Line 7', section: 'PC Line' },
       { name: 'Line 8', section: 'Pellet Lines' }, { name: 'Line 9', section: 'Pellet Lines' },
-      { name: 'Line 10', section: 'Pellet Lines' }, { name: 'Line 11', section: 'Pellet Lines' },
+      { name: 'Line 10', section: 'Pellet Lines' }, { name: 'Line 11', section: 'Extruded' },
       { name: 'Line 12', section: 'Extruded' }, { name: 'Line 13', section: 'Extruded' },
       { name: 'Line 14', section: 'Extruded' }, { name: 'Line 15', section: 'Extruded' },
       { name: 'Line 16', section: 'Extruded' },
@@ -176,7 +176,7 @@
       const [selectedIssueType, setSelectedIssueType] = useState('All Issues');
       const [selectedHistoryLine, setSelectedHistoryLine] = useState('All Lines');
       const [selectedHistoryHead, setSelectedHistoryHead] = useState('All Heads');
-      const [selectedDashboardDay, setSelectedDashboardDay] = useState('All Days');
+      const [selectedDashboardDay, setSelectedDashboardDay] = useState('2025-04-13');
 
       const textareaRefs = useRef(defaultHeadData.map(() => React.createRef()));
       const pendingHistoryUpdates = useRef({});
@@ -584,7 +584,7 @@
         try {
           const { jsPDF } = window.jspdf;
           const doc = new jsPDF();
-          doc.text('Manufacturing Downtime Log', 14, 20);
+          doc.text('JTI Downtime Log', 14, 20);
           const tableData = [];
 
           lines.forEach(line => {
@@ -737,9 +737,6 @@
         };
 
         const runningLines = lines.filter(line => {
-          if (selectedDashboardDay === 'All Days') {
-            return dates.some(d => data[line.name]?.running?.[d.date] === 'Yes');
-          }
           return data[line.name]?.running?.[selectedDashboardDay] === 'Yes';
         });
 
@@ -756,7 +753,6 @@
                     value={selectedDashboardDay}
                     onChange={(e) => setSelectedDashboardDay(e.target.value)}
                   >
-                    <option value="All Days">All Days</option>
                     {dates.map(day => (
                       <option key={day.date} value={day.date}>
                         {day.label} ({day.date})
@@ -766,7 +762,7 @@
                 </div>
               </div>
               {runningLines.length === 0 ? (
-                <p className="text-gray-600">No lines running for {selectedDashboardDay === 'All Days' ? 'any day' : selectedDashboardDay}.</p>
+                <p className="text-gray-600">No lines running for {selectedDashboardDay}.</p>
               ) : (
                 runningLines.map(line => (
                   <div key={line.name} className="mb-6">
@@ -1376,7 +1372,7 @@
         <ErrorBoundary>
           <div className="max-w-7xl mx-auto">
             <h1 className="text-3xl font-bold text-gray-800 mb-8 text-center">
-              Manufacturing Downtime Logger
+              JTI Downtime Logger
             </h1>
 
             <div className="flex flex-wrap mb-8 gap-2">
