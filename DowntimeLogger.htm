@@ -175,6 +175,8 @@
       const [selectedSummaryDay, setSelectedSummaryDay] = useState('All Days');
       const [selectedRunningLinesDay, setSelectedRunningLinesDay] = useState('All Days');
       const [selectedIssueType, setSelectedIssueType] = useState('All Issues');
+      const [selectedHistoryLine, setSelectedHistoryLine] = useState('All Lines');
+      const [selectedHistoryHead, setSelectedHistoryHead] = useState('All Heads');
 
       const textareaRefs = useRef(defaultHeadData.map(() => React.createRef()));
       const pendingHistoryUpdates = useRef({});
@@ -802,59 +804,111 @@
         </div>
       );
 
-      const HistoryPage = () => (
-        <div>
-          <h2 className="text-2xl font-semibold mb-6">History Log</h2>
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h3 className="text-xl font-semibold mb-4">Change History</h3>
-            {historyLog.length === 0 ? (
-              <p className="text-gray-600">No history entries yet.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full bg-white">
-                  <thead>
-                    <tr className="bg-gray-200">
-                      <th className="px-4 py-2 text-left">Timestamp</th>
-                      <th className="px-4 py-2 text-left">Line</th>
-                      <th className="px-4 py-2 text-left">Date</th>
-                      <th className="px-4 py-2 text-left">Head</th>
-                      <th className="px-4 py-2 text-left">Offline Status</th>
-                      <th className="px-4 py-2 text-left">Issue</th>
-                      <th className="px-4 py-2 text-left">Repaired</th>
-                      <th className="px-4 py-2 text-left">Notes</th>
-                      <th className="px-4 py-2 text-left">Change</th>
-                      <th className="px-4 py-2 text-left">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historyLog.map(entry => (
-                      <tr key={entry.id} className="border-t">
-                        <td className="px-4 py-2">{new Date(entry.timestamp).toLocaleString()}</td>
-                        <td className="px-4 py-2">{entry.line}</td>
-                        <td className="px-4 py-2">{entry.date}</td>
-                        <td className="px-4 py-2">{entry.head}</td>
-                        <td className="px-4 py-2">{entry.offline}</td>
-                        <td className="px-4 py-2">{entry.issue}</td>
-                        <td className="px-4 py-2">{entry.repaired}</td>
-                        <td className="px-4 py-2">{entry.notes || 'N/A'}</td>
-                        <td className="px-4 py-2">{entry.change}</td>
-                        <td className="px-4 py-2">
-                          <button
-                            className="bg-red-500 text-white px-2 py-1 rounded-md hover:bg-red-600"
-                            onClick={() => deleteHistoryItem(entry.id)}
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
+      const HistoryPage = () => {
+        const filteredHistoryLog = historyLog.filter(entry => {
+          const matchesLine = selectedHistoryLine === 'All Lines' || entry.line === selectedHistoryLine;
+          const matchesHead = selectedHistoryHead === 'All Heads' || entry.head.toString() === selectedHistoryHead;
+          return matchesLine && matchesHead;
+        });
+
+        return (
+          <div>
+            <h2 className="text-2xl font-semibold mb-6">History Log</h2>
+            <div className="bg-white p-6 rounded-lg shadow-md">
+              <h3 className="text-xl font-semibold mb-4">Change History</h3>
+              <div className="flex flex-wrap gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Select Line</label>
+                  <select
+                    className="w-full p-2 border rounded-md"
+                    value={selectedHistoryLine}
+                    onChange={(e) => setSelectedHistoryLine(e.target.value)}
+                  >
+                    <option value="All Lines">All Lines</option>
+                    {lines.map(line => (
+                      <option key={line.name} value={line.name}>
+                        {line.section}: {line.name}
+                      </option>
                     ))}
-                  </tbody>
-                </table>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Select Head</label>
+                  <select
+                    className="w-full p-2 border rounded-md"
+                    value={selectedHistoryHead}
+                    onChange={(e) => setSelectedHistoryHead(e.target.value)}
+                  >
+                    <option value="All Heads">All Heads</option>
+                    {Array.from({ length: 14 }, (_, i) => i + 1).map(head => (
+                      <option key={head} value={head}>{head}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">&nbsp;</label>
+                  <button
+                    className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+                    onClick={() => {
+                      setSelectedHistoryLine('All Lines');
+                      setSelectedHistoryHead('All Heads');
+                    }}
+                  >
+                    View All
+                  </button>
+                </div>
               </div>
-            )}
+              {filteredHistoryLog.length === 0 ? (
+                <p className="text-gray-600">
+                  No history entries for {selectedHistoryLine} {selectedHistoryHead !== 'All Heads' ? `Head ${selectedHistoryHead}` : ''}.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full bg-white">
+                    <thead>
+                      <tr className="bg-gray-200">
+                        <th className="px-4 py-2 text-left">Timestamp</th>
+                        <th className="px-4 py-2 text-left">Line</th>
+                        <th className="px-4 py-2 text-left">Date</th>
+                        <th className="px-4 py-2 text-left">Head</th>
+                        <th className="px-4 py-2 text-left">Offline Status</th>
+                        <th className="px-4 py-2 text-left">Issue</th>
+                        <th className="px-4 py-2 text-left">Repaired</th>
+                        <th className="px-4 py-2 text-left">Notes</th>
+                        <th className="px-4 py-2 text-left">Change</th>
+                        <th className="px-4 py-2 text-left">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredHistoryLog.map(entry => (
+                        <tr key={entry.id} className="border-t">
+                          <td className="px-4 py-2">{new Date(entry.timestamp).toLocaleString()}</td>
+                          <td className="px-4 py-2">{entry.line}</td>
+                          <td className="px-4 py-2">{entry.date}</td>
+                          <td className="px-4 py-2">{entry.head}</td>
+                          <td className="px-4 py-2">{entry.offline}</td>
+                          <td className="px-4 py-2">{entry.issue}</td>
+                          <td className="px-4 py-2">{entry.repaired}</td>
+                          <td className="px-4 py-2">{entry.notes || 'N/A'}</td>
+                          <td className="px-4 py-2">{entry.change}</td>
+                          <td className="px-4 py-2">
+                            <button
+                              className="bg-red-500 text-white px-2 py-1 rounded-md hover:bg-red-600"
+                              onClick={() => deleteHistoryItem(entry.id)}
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      );
+        );
+      };
 
       const MainPage = () => (
         <div>
