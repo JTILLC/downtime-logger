@@ -1,3 +1,43 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+</script>
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
 <html>
 <head>
@@ -272,7 +312,6 @@
               const newData = JSON.parse(JSON.stringify(initialData));
               const csvDates = new Set();
 
-              // Collect unique dates from CSV
               parsed.data.forEach(row => {
                 const date = row.Date;
                 if (date && !csvDates.has(date)) {
@@ -280,7 +319,6 @@
                 }
               });
 
-              // Sort dates and take up to 5 to map to Day 1 through Day 5
               const sortedCsvDates = Array.from(csvDates).sort();
               const newDates = initialDates.map((day, index) => {
                 const newDate = sortedCsvDates[index] || day.date;
@@ -291,7 +329,6 @@
                 };
               });
 
-              // Process CSV data
               parsed.data.forEach(row => {
                 const lineName = row.Line;
                 if (!lines.some(l => l.name === lineName)) {
@@ -684,19 +721,17 @@
         }, 0)
       }));
 
-      const issueCounts = issueTypes.reduce((acc, type) => {
-        if (type === 'None') return acc;
-        const count = Object.keys(data).reduce((sum, line) => {
-          return sum + dates.reduce((daySum, day) => {
-            const heads = data[line][day.date]?.heads || defaultHeadData;
-            return daySum + heads.filter(head => head.issue === type).length;
+      const issueCounts = issueTypes
+        .filter(type => type !== 'None') // Exclude 'None' as per original logic
+        .map(type => {
+          const count = Object.keys(data).reduce((sum, line) => {
+            return sum + dates.reduce((daySum, day) => {
+              const heads = data[line][day.date]?.heads || defaultHeadData;
+              return daySum + heads.filter(head => head.issue === type).length;
+            }, 0);
           }, 0);
-        }, 0);
-        if (count > 0) {
-          acc.push({ issue: type, count });
-        }
-        return acc;
-      }, []);
+          return { issue: type, count };
+        });
 
       const activeLines = Object.keys(data).filter(line => {
         return dates.some(day => {
@@ -887,7 +922,6 @@
         const getTotalEfficiency = (day) => {
           try {
             if (day === 'All Days') {
-              // For all days, calculate average efficiency of lines running on any day
               const runningLines = lines.filter(line =>
                 dates.some(d => data[line.name]?.running?.[d.date] === 'Yes')
               );
@@ -903,7 +937,6 @@
               }, 0);
               return (totalEfficiency / runningLines.length).toFixed(2);
             } else {
-              // For a specific day, calculate average efficiency of running lines
               const runningLines = lines.filter(line => data[line.name]?.running?.[day] === 'Yes');
               if (runningLines.length === 0) return (0).toFixed(2);
               const totalEfficiency = runningLines.reduce((sum, line) => {
@@ -999,7 +1032,7 @@
                     style={{ fontSize: 12 }}
                   >
                     {issueCounts.map((entry, index) => (
-                      <Recharts.Cell key={`cell-${index}`} fill={['#10b981', '#ef4444', '#f59e0b'][index % 3]} />
+                      <Recharts.Cell key={`cell-${index}`} fill={['#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#6b7280', '#eab308'][index % 7]} />
                     ))}
                   </Recharts.Pie>
                   <Recharts.Tooltip />
@@ -1468,7 +1501,7 @@
                     style={{ fontSize: 12 }}
                   >
                     {issueCounts.map((entry, index) => (
-                      <Recharts.Cell key={`cell-${index}`} fill={['#10b981', '#ef4444', '#f59e0b'][index % 3]} />
+                      <Recharts.Cell key={`cell-${index}`} fill={['#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#6b7280', '#eab308'][index % 7]} />
                     ))}
                   </Recharts.Pie>
                   <Recharts.Tooltip />
@@ -1590,4 +1623,5 @@
       document.getElementById('error-message').textContent = 'Failed to load app: ' + e.message + '. Please check console and refresh.';
     }
   </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9326f3a7ae536
+</body>
+</html>
