@@ -884,6 +884,41 @@
           }
         };
 
+        const getTotalEfficiency = (day) => {
+          try {
+            if (day === 'All Days') {
+              // For all days, calculate average efficiency of lines running on any day
+              const runningLines = lines.filter(line =>
+                dates.some(d => data[line.name]?.running?.[d.date] === 'Yes')
+              );
+              if (runningLines.length === 0) return (0).toFixed(2);
+              const totalEfficiency = runningLines.reduce((sum, line) => {
+                const runningDays = dates.filter(d => data[line.name]?.running?.[d.date] === 'Yes');
+                const avgEfficiency = runningDays.reduce((daySum, d) => {
+                  const heads = data[line.name]?.[d.date]?.heads || defaultHeadData;
+                  const activeHeads = heads.filter(head => head.offline === 'Active').length;
+                  return daySum + (activeHeads / 14 * 100);
+                }, 0) / runningDays.length;
+                return sum + avgEfficiency;
+              }, 0);
+              return (totalEfficiency / runningLines.length).toFixed(2);
+            } else {
+              // For a specific day, calculate average efficiency of running lines
+              const runningLines = lines.filter(line => data[line.name]?.running?.[day] === 'Yes');
+              if (runningLines.length === 0) return (0).toFixed(2);
+              const totalEfficiency = runningLines.reduce((sum, line) => {
+                const heads = data[line.name]?.[day]?.heads || defaultHeadData;
+                const activeHeads = heads.filter(head => head.offline === 'Active').length;
+                return sum + (activeHeads / 14 * 100);
+              }, 0);
+              return (totalEfficiency / runningLines.length).toFixed(2);
+            }
+          } catch (e) {
+            console.error('Error calculating total efficiency:', e);
+            return (0).toFixed(2);
+          }
+        };
+
         console.log('Dashboard data:', JSON.stringify(data, null, 2));
 
         return (
@@ -907,6 +942,11 @@
                     ))}
                   </select>
                 </div>
+              </div>
+              <div className="mb-4">
+                <p className="text-lg font-semibold text-gray-800">
+                  Total Efficiency: {getTotalEfficiency(selectedDashboardDay)}%
+                </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                 {lines.map(line => {
@@ -973,6 +1013,30 @@
 
       const SummaryPage = () => {
         console.log('Rendering SummaryPage');
+        const filteredRows = lines.reduce((acc, line) => {
+          dates
+            .filter(day => selectedSummaryDay === 'All Days' || day.label === selectedSummaryDay)
+            .forEach(day => {
+              const heads = data[line.name][day.date]?.heads || defaultHeadData;
+              const offlineHeads = heads.filter(head => head.offline === 'Offline');
+              if (offlineHeads.length > 0) {
+                const issues = offlineHeads
+                  .filter(head => selectedIssueType === 'All Issues' || head.issue === selectedIssueType)
+                  .map(head => `Head ${head.head}: ${head.issue} (${head.repaired})`);
+                if (issues.length > 0) {
+                  acc.push({
+                    line: line.name,
+                    section: line.section,
+                    date: day.date,
+                    offlineHeads: offlineHeads.map(h => h.head).join(', '),
+                    issues: issues.join('; ')
+                  });
+                }
+              }
+            });
+          return acc;
+        }, []);
+
         return (
           <div>
             <h2 className="text-2xl font-semibold mb-6">Summary</h2>
@@ -1017,26 +1081,23 @@
                     </tr>
                   </thead>
                   <tbody>
-                    {lines.map(line => {
-                      return dates
-                        .filter(day => selectedSummaryDay === 'All Days' || day.label === selectedSummaryDay)
-                        .map(day => {
-                          const heads = data[line.name][day.date]?.heads || defaultHeadData;
-                          const offlineHeads = heads.filter(head => head.offline === 'Offline');
-                          const issues = offlineHeads
-                            .filter(head => selectedIssueType === 'All Issues' || head.issue === selectedIssueType)
-                            .map(head => `Head ${head.head}: ${head.issue} (${head.repaired})`);
-                          return (
-                            <tr key={`${line.name}-${day.date}`} className="border-t">
-                              <td className="px-4 py-2">{line.name}</td>
-                              <td className="px-4 py-2">{line.section}</td>
-                              <td className="px-4 py-2">{day.date}</td>
-                              <td className="px-4 py-2">{offlineHeads.length > 0 ? offlineHeads.map(h => h.head).join(', ') : 'None'}</td>
-                              <td className="px-4 py-2">{issues.length > 0 ? issues.join('; ') : 'None'}</td>
-                            </tr>
-                          );
-                        });
-                    })}
+                    {filteredRows.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="px-4 py-2 text-center text-gray-600">
+                          No offline heads for this day/issue type.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredRows.map((row, index) => (
+                        <tr key={`${row.line}-${row.date}-${index}`} className="border-t">
+                          <td className="px-4 py-2">{row.line}</td>
+                          <td className="px-4 py-2">{row.section}</td>
+                          <td className="px-4 py-2">{row.date}</td>
+                          <td className="px-4 py-2">{row.offlineHeads}</td>
+                          <td className="px-4 py-2">{row.issues}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1529,6 +1590,4 @@
       document.getElementById('error-message').textContent = 'Failed to load app: ' + e.message + '. Please check console and refresh.';
     }
   </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9326f3a7ae53677b',t:'MTc0NTAwODU1OS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-</body>
-</html>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9326f3a7ae536
