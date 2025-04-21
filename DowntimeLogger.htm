@@ -722,7 +722,7 @@
       }));
 
       const issueCounts = issueTypes
-        .filter(type => type !== 'None') // Exclude 'None' as per original logic
+        .filter(type => type !== 'None')
         .map(type => {
           const count = Object.keys(data).reduce((sum, line) => {
             return sum + dates.reduce((daySum, day) => {
@@ -883,15 +883,6 @@
         console.log('Rendering DashboardPage');
         const isLineRunning = (line, day) => {
           console.log(`Checking isLineRunning for ${line.name}, day=${day}`);
-          if (day === 'All Days') {
-            const isRunning = dates.some(d => {
-              const status = data[line.name]?.running?.[d.date] || 'No';
-              console.log(`  Day ${d.date}: status=${status}`);
-              return status === 'Yes';
-            });
-            console.log(`  All Days result for ${line.name}: ${isRunning}`);
-            return isRunning;
-          }
           const status = data[line.name]?.running?.[day] || 'No';
           console.log(`  Specific day ${day} for ${line.name}: status=${status}`);
           return status === 'Yes';
@@ -899,19 +890,14 @@
 
         const getLineEfficiency = (line, day) => {
           try {
-            let selectedDay = day;
-            if (day === 'All Days') {
-              const runningDay = dates.find(d => data[line.name]?.running?.[d.date] === 'Yes');
-              selectedDay = runningDay ? runningDay.date : dates[0].date;
-            }
-            const heads = data[line.name]?.[selectedDay]?.heads || defaultHeadData;
+            const heads = data[line.name]?.[day]?.heads || defaultHeadData;
             if (!heads || !Array.isArray(heads)) {
-              console.warn(`No valid heads data for ${line.name} on ${selectedDay}, using default`);
+              console.warn(`No valid heads data for ${line.name} on ${day}, using default`);
               return (0).toFixed(2);
             }
             const activeHeads = heads.filter(head => head.offline === 'Active').length;
             const efficiency = (activeHeads / 14 * 100).toFixed(2);
-            console.log(`Efficiency for ${line.name} on ${selectedDay}: ${efficiency}%`);
+            console.log(`Efficiency for ${line.name} on ${day}: ${efficiency}%`);
             return efficiency;
           } catch (e) {
             console.error(`Error calculating efficiency for ${line.name}:`, e);
@@ -921,31 +907,14 @@
 
         const getTotalEfficiency = (day) => {
           try {
-            if (day === 'All Days') {
-              const runningLines = lines.filter(line =>
-                dates.some(d => data[line.name]?.running?.[d.date] === 'Yes')
-              );
-              if (runningLines.length === 0) return (0).toFixed(2);
-              const totalEfficiency = runningLines.reduce((sum, line) => {
-                const runningDays = dates.filter(d => data[line.name]?.running?.[d.date] === 'Yes');
-                const avgEfficiency = runningDays.reduce((daySum, d) => {
-                  const heads = data[line.name]?.[d.date]?.heads || defaultHeadData;
-                  const activeHeads = heads.filter(head => head.offline === 'Active').length;
-                  return daySum + (activeHeads / 14 * 100);
-                }, 0) / runningDays.length;
-                return sum + avgEfficiency;
-              }, 0);
-              return (totalEfficiency / runningLines.length).toFixed(2);
-            } else {
-              const runningLines = lines.filter(line => data[line.name]?.running?.[day] === 'Yes');
-              if (runningLines.length === 0) return (0).toFixed(2);
-              const totalEfficiency = runningLines.reduce((sum, line) => {
-                const heads = data[line.name]?.[day]?.heads || defaultHeadData;
-                const activeHeads = heads.filter(head => head.offline === 'Active').length;
-                return sum + (activeHeads / 14 * 100);
-              }, 0);
-              return (totalEfficiency / runningLines.length).toFixed(2);
-            }
+            const runningLines = lines.filter(line => data[line.name]?.running?.[day] === 'Yes');
+            if (runningLines.length === 0) return (0).toFixed(2);
+            const totalEfficiency = runningLines.reduce((sum, line) => {
+              const heads = data[line.name]?.[day]?.heads || defaultHeadData;
+              const activeHeads = heads.filter(head => head.offline === 'Active').length;
+              return sum + (activeHeads / 14 * 100);
+            }, 0);
+            return (totalEfficiency / runningLines.length).toFixed(2);
           } catch (e) {
             console.error('Error calculating total efficiency:', e);
             return (0).toFixed(2);
@@ -967,7 +936,6 @@
                     value={selectedDashboardDay}
                     onChange={(e) => setSelectedDashboardDay(e.target.value)}
                   >
-                    <option value="All Days">All Days</option>
                     {dates.map(day => (
                       <option key={day.date} value={day.date}>
                         {day.label} ({day.date})
@@ -1040,7 +1008,7 @@
                 </Recharts.PieChart>
               </Recharts.ResponsiveContainer>
             </div>
-          </div>
+            </div>
         );
       };
 
