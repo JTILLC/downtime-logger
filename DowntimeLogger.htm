@@ -32,7 +32,6 @@
   </div>
 
   <script type="text/javascript">
-    // Global error handler to catch unhandled script errors
     window.onerror = function(message, source, lineno, colno, error) {
       console.error('Global script error:', {
         message: message,
@@ -113,6 +112,32 @@
           return this.props.children;
         }
       }
+
+      const ConfirmModal = ({ isOpen, message, onConfirm, onCancel }) => {
+        if (!isOpen) return null;
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
+              <h2 className="text-xl font-semibold mb-4">Confirm Action</h2>
+              <p className="text-gray-600 mb-6">{message}</p>
+              <div className="flex justify-end gap-2">
+                <button
+                  className="bg-gray-300 text-black px-4 py-2 rounded-md hover:bg-gray-400"
+                  onClick={onCancel}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+                  onClick={onConfirm}
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      };
 
       const lines = [
         { name: 'Line 1', section: 'PC Line' }, { name: 'Line 2', section: 'PC Line' },
@@ -212,6 +237,7 @@
         const [selectedHistoryLine, setSelectedHistoryLine] = useState('All Lines');
         const [selectedHistoryHead, setSelectedHistoryHead] = useState('All Heads');
         const [selectedDashboardDay, setSelectedDashboardDay] = useState('2025-04-13');
+        const [confirmModal, setConfirmModal] = useState({ isOpen: false, message: '', onConfirm: () => {} });
 
         const textareaRefs = useRef(defaultHeadData.map(() => React.createRef()));
         const pendingHistoryUpdates = useRef({});
@@ -258,6 +284,18 @@
           'Installed Wrong'
         ];
 
+        const deepMerge = (target, source) => {
+          const output = { ...target };
+          Object.keys(source).forEach(key => {
+            if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+              output[key] = deepMerge(target[key] || {}, source[key]);
+            } else {
+              output[key] = source[key];
+            }
+          });
+          return output;
+        };
+
         const handleFileImport = async (event) => {
           console.log('Starting CSV import');
           try {
@@ -295,7 +333,6 @@
                 const newData = JSON.parse(JSON.stringify(initialData));
                 const csvDatesByDay = {};
 
-                // Collect dates by day ID
                 parsed.data.forEach(row => {
                   const dayId = row.Day;
                   const date = row.Date;
@@ -304,7 +341,6 @@
                   }
                 });
 
-                // Update dates based on CSV
                 const newDates = initialDates.map(day => {
                   const newDate = csvDatesByDay[day.id] || day.date;
                   return {
@@ -314,7 +350,6 @@
                   };
                 });
 
-                // Process CSV data
                 parsed.data.forEach(row => {
                   const lineName = row.Line;
                   if (!lines.some(l => l.name === lineName)) {
@@ -344,18 +379,11 @@
                   }
                 });
 
-                // Update state
-                setData(prev => ({ ...prev, ...newData }));
+                setData(prev => deepMerge(prev, newData));
                 setDates(newDates);
-                setCurrentLine(prev => prev); // Re-apply current line
-                setCurrentDay(prev => {
-                  const validDay = newDates.some(d => d.date === prev) ? prev : newDates[0].date;
-                  return validDay;
-                });
-                setSelectedDashboardDay(prev => {
-                  const validDay = newDates.some(d => d.date === prev) ? prev : newDates[0].date;
-                  return validDay;
-                });
+                setCurrentLine('Line 1');
+                setCurrentDay(newDates[0].date);
+                setSelectedDashboardDay(newDates[0].date);
                 setError(null);
                 console.log('CSV import successful');
               } catch (err) {
@@ -436,16 +464,45 @@
         };
 
         const handleClearHistory = () => {
-          console.log('Clearing history');
-          try {
-            if (window.confirm('Are you sure you want to clear all history entries? This action cannot be undone.')) {
-              setHistoryLog([]);
-              setError(null);
-            }
-          } catch (e) {
-            console.error('handleClearHistory error:', e);
-            setError('Failed to clear history. Please try again.');
-          }
+          console.log('Initiating clear history');
+          setConfirmModal({
+            isOpen: true,
+            message: 'Are you sure you want to clear all history entries? This action cannot be undone.',
+            onConfirm: () => {
+              try {
+                setHistoryLog([]);
+                setError(null);
+                setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
+              } catch (e) {
+                console.error('handleClearHistory error:', e);
+                setError('Failed to clear history. Please try again.');
+              }
+            },
+            onCancel: () => setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} })
+          });
+        };
+
+        const handleReset = () => {
+          console.log('Initiating reset to defaults');
+          setConfirmModal({
+            isOpen: true,
+            message: 'Are you sure you want to reset all data to default settings? This will clear all entries and cannot be undone.',
+            onConfirm: () => {
+              try {
+                setData(JSON.parse(JSON.stringify(initialData)));
+                setDates([...initialDates]);
+                setHistoryLog([]);
+                setCurrentLine('Line 1');
+                setCurrentDay('2025-04-13');
+                setError(null);
+                setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} });
+              } catch (e) {
+                console.error('handleReset error:', e);
+                setError('Failed to reset data. Please try again.');
+              }
+            },
+            onCancel: () => setConfirmModal({ isOpen: false, message: '', onConfirm: () => {} })
+          });
         };
 
         const handleExportHistoryToCSV = () => {
@@ -607,21 +664,6 @@
           } catch (e) {
             console.error('handleRunningChange error:', e);
             setError('Failed to update running status. Please try again.');
-          }
-        };
-
-        const handleReset = () => {
-          console.log('Resetting to defaults');
-          try {
-            setData(JSON.parse(JSON.stringify(initialData)));
-            setDates([...initialDates]);
-            setHistoryLog([]);
-            setCurrentLine('Line 1');
-            setCurrentDay('2025-04-13');
-            setError(null);
-          } catch (e) {
-            console.error('handleReset error:', e);
-            setError('Failed to reset data. Please try again.');
           }
         };
 
@@ -1606,6 +1648,12 @@
               </div>
 
               {currentPage === 'main' ? <MainPage /> : currentPage === 'dashboard' ? <DashboardPage /> : currentPage === 'history' ? <HistoryPage /> : currentPage === 'runningHeads' ? <RunningLinesHeadsPage /> : <SummaryPage />}
+              <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                message={confirmModal.message}
+                onConfirm={confirmModal.onConfirm}
+                onCancel={confirmModal.onCancel}
+              />
             </div>
           </ErrorBoundary>
         );
