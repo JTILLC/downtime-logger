@@ -1,5 +1,47 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+
 <html>
+
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
   <meta http-equiv="Content-Style-Type" content="text/css">
@@ -24,6 +66,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" onerror="console.error('Failed to load jsPDF:', event)"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js" onerror="console.error('Failed to load jsPDF AutoTable:', event)"></script>
 </head>
+
 <body class="bg-gray-100 font-sans">
   <div id="root" class="container mx-auto p-4"></div>
   <div id="error-container" style="display: none; text-align: center; color: red; padding: 20px;">
@@ -747,20 +790,33 @@
           }
         };
 
+        const totalHeadsDownPerDay = dates.map(day => ({
+          day: day.label,
+          headsDown: Object.keys(data).reduce((sum, line) => {
+            const heads = data[line][day.date]?.heads || defaultHeadData;
+            return sum + heads.filter(head => head.offline === 'Offline').length;
+          }, 0),
+          headsFixed: Object.keys(data).reduce((sum, line) => {
+            const heads = data[line][day.date]?.heads || defaultHeadData;
+            return sum + heads.filter(head => head.offline === 'Offline' && head.repaired === 'Fixed').length;
+          }, 0)
+        }));
+
+        const lineHeadsStatusPerDay = lines.reduce((acc, line) => {
+          acc[line.name] = dates.map(day => ({
+            day: day.label,
+            headsDown: (data[line.name][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline').length,
+            headsFixed: (data[line.name][day.date]?.heads || defaultHeadData).filter(head => head.offline === 'Offline' && head.repaired === 'Fixed').length
+          }));
+          return acc;
+        }, {});
+
         const totalHeadsDown = Object.keys(data).reduce((acc, line) => {
           return acc + dates.reduce((sum, day) => {
             const heads = data[line][day.date]?.heads || defaultHeadData;
             return sum + heads.filter(head => head.offline === 'Offline').length;
           }, 0);
         }, 0);
-
-        const totalHeadsDownPerDay = dates.map(day => ({
-          day: day.label,
-          heads: Object.keys(data).reduce((sum, line) => {
-            const heads = data[line][day.date]?.heads || defaultHeadData;
-            return sum + heads.filter(head => head.offline === 'Offline').length;
-          }, 0)
-        }));
 
         const issueCounts = issueTypes
           .filter(type => type !== 'None')
@@ -1010,18 +1066,19 @@
                 </div>
               </div>
               <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-                <h3 className="text-xl font-semibold mb-4">Total Heads Down Per Day (All Lines)</h3>
+                <h3 className="text-xl font-semibold mb-4">Total Heads Down and Fixed Per Day (All Lines)</h3>
                 <Recharts.ResponsiveContainer width="100%" height={300}>
                   <Recharts.BarChart data={totalHeadsDownPerDay}>
                     <Recharts.CartesianGrid strokeDasharray="3 3" />
                     <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
                     <Recharts.YAxis
-                      label={{ value: 'Heads Down', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                      label={{ value: 'Heads', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
                       style={{ fontSize: 12 }}
                     />
                     <Recharts.Tooltip />
                     <Recharts.Legend />
-                    <Recharts.Bar dataKey="heads" fill="#3b82f6" />
+                    <Recharts.Bar dataKey="headsDown" name="Heads Down" fill="#3b82f6" />
+                    <Recharts.Bar dataKey="headsFixed" name="Heads Fixed" fill="#10b981" />
                   </Recharts.BarChart>
                 </Recharts.ResponsiveContainer>
               </div>
@@ -1514,18 +1571,19 @@
               </div>
 
               <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-                <h2 className="text-xl font-semibold mb-4">Heads Down Per Day ({currentLine})</h2>
+                <h2 className="text-xl font-semibold mb-4">Heads Down and Fixed Per Day ({currentLine})</h2>
                 <Recharts.ResponsiveContainer width="100%" height={300}>
-                  <Recharts.BarChart data={totalHeadsDownPerDay}>
+                  <Recharts.BarChart data={lineHeadsStatusPerDay[currentLine]}>
                     <Recharts.CartesianGrid strokeDasharray="3 3" />
                     <Recharts.XAxis dataKey="day" style={{ fontSize: 12 }} />
                     <Recharts.YAxis
-                      label={{ value: 'Heads Down', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                      label={{ value: 'Heads', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
                       style={{ fontSize: 12 }}
                     />
                     <Recharts.Tooltip />
                     <Recharts.Legend />
-                    <Recharts.Bar dataKey="heads" fill="#3b82f6" />
+                    <Recharts.Bar dataKey="headsDown" name="Heads Down" fill="#3b82f6" />
+                    <Recharts.Bar dataKey="headsFixed" name="Heads Fixed" fill="#10b981" />
                   </Recharts.BarChart>
                 </Recharts.ResponsiveContainer>
               </div>
@@ -1674,4 +1732,5 @@
     }
   </script>
 </body>
+
 </html>
