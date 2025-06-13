@@ -1039,6 +1039,8 @@
             }
           };
 
+          const getFixedTotalEfficiency = (day) => {            try {              const runningLines = lines.filter(line => data[line.name]?.running?.[day] === 'Yes');              if (runningLines.length === 0) return (0).toFixed(2);              const totalFixedEfficiency = runningLines.reduce((sum, line) => {                const heads = data[line.name]?.[day]?.heads || defaultHeadData;                const fixedCount = heads.filter(h => h.offline === 'Active' || (h.offline === 'Offline' && h.repaired === 'Fixed')).length;                return sum + (fixedCount / heads.length) * 100;              }, 0);              return (totalFixedEfficiency / runningLines.length).toFixed(2);            } catch (e) {              console.error(`Error calculating fixed efficiency for ${day}:`, e);              return (0).toFixed(2);            }          };
+
           console.log('Dashboard data:', JSON.stringify(data, null, 2));
 
           return (
@@ -1062,9 +1064,12 @@
                     </select>
                   </div>
                 </div>
-                <div className="mb-4">
+                <div className="mb-4 flex gap-6">
                   <p className="text-lg font-semibold text-gray-800">
                     Total Efficiency: {getTotalEfficiency(selectedDashboardDay)}%
+                  </p>
+                  <p className="text-lg font-semibold text-gray-800">
+                    Fixed Total Efficiency: {getFixedTotalEfficiency(selectedDashboardDay)}%
                   </p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
