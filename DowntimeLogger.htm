@@ -1458,6 +1458,9 @@
                     </option>
                   ))}
                 </select>
+  <p className="text-sm text-gray-600 mt-2">
+    Offline heads: {data[currentLine][currentDay]?.heads.filter(h => h.offline === "Offline").length || 0}
+  </p>
               </div>
 
               <div className="mb-8">
