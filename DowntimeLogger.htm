@@ -1009,6 +1009,19 @@
               return (0).toFixed(2);
             }
           };
+            const getLinePotentialEfficiency = (line, day) => {
+              try {
+                const heads = data[line.name]?.[day]?.heads || defaultHeadData;
+                const count = heads.filter(h =>
+                  h.offline === 'Active' ||
+                  (h.offline === 'Offline' && h.repaired === 'Fixed')
+                ).length;
+                return ((count / 14) * 100).toFixed(2);
+              } catch (e) {
+                console.error(`Error calculating potential efficiency for ${line.name} on ${day}:`, e);
+                return (0).toFixed(2);
+              }
+            };
 
           const getTotalEfficiency = (day) => {
             try {
@@ -1068,6 +1081,7 @@
                         <p className="font-semibold">{line.section}: {line.name}</p>
                         <p>Status: {isRunning ? 'Running' : 'Not Running'}</p>
                         <p className="text-sm">Efficiency: {efficiency}%</p>
+                        <p className="text-sm">Fixed Efficiency: {getLinePotentialEfficiency(line, selectedDashboardDay)}%</p>
                       </div>
                     );
                   })}
